@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import GeofenceMapPicker from '../components/GeofenceMapPicker';
 import {
   Calendar,
   Plus,
@@ -20,11 +21,11 @@ export default function EventManagement() {
   const [showModal, setShowModal] = useState(false);
   const [editingEvent, setEditingEvent] = useState(null);
 
-  // Form State
+  // Form State (Default to Laoag City, Ilocos Norte)
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [centerLat, setCenterLat] = useState(14.5995);
-  const [centerLng, setCenterLng] = useState(120.9842);
+  const [centerLat, setCenterLat] = useState(18.1960);
+  const [centerLng, setCenterLng] = useState(120.5927);
   const [radiusMeters, setRadiusMeters] = useState(150);
   const [graceMinutes, setGraceMinutes] = useState(15);
   const [collegeFilter, setCollegeFilter] = useState('all');
@@ -57,8 +58,8 @@ export default function EventManagement() {
     setEditingEvent(null);
     setName('');
     setDescription('');
-    setCenterLat(14.5995);
-    setCenterLng(120.9842);
+    setCenterLat(18.1960);
+    setCenterLng(120.5927);
     setRadiusMeters(150);
     setGraceMinutes(15);
     setCollegeFilter('all');
@@ -301,18 +302,24 @@ export default function EventManagement() {
               </div>
 
               {/* Geofence Map Center & Radius */}
-              <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-3">
-                <h3 className="font-bold text-slate-200 flex items-center gap-1.5">
-                  <MapPin className="w-4 h-4 text-indigo-400" />
-                  Geofence Perimeter Settings
-                </h3>
+              <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-4">
+                {/* Interactive Leaflet Map Picker Bounded to Ilocos Norte */}
+                <GeofenceMapPicker
+                  centerLat={centerLat}
+                  centerLng={centerLng}
+                  radiusMeters={radiusMeters}
+                  onChangeCenter={(lat, lng) => {
+                    setCenterLat(Math.round(lat * 100000) / 100000);
+                    setCenterLng(Math.round(lng * 100000) / 100000);
+                  }}
+                />
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-slate-400">Center Latitude</label>
                     <input
                       type="number"
-                      step="0.0001"
+                      step="0.00001"
                       value={centerLat}
                       onChange={(e) => setCenterLat(e.target.value)}
                       className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-white font-mono"
@@ -323,7 +330,7 @@ export default function EventManagement() {
                     <label className="text-slate-400">Center Longitude</label>
                     <input
                       type="number"
-                      step="0.0001"
+                      step="0.00001"
                       value={centerLng}
                       onChange={(e) => setCenterLng(e.target.value)}
                       className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-white font-mono"

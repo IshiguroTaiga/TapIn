@@ -62,9 +62,9 @@ function seed() {
   insertEvent.run(
     1,
     'University Convocation 2026',
-    'Annual General Student Convocation & Keynote Assembly',
-    14.5995,
-    120.9842,
+    'Annual General Student Convocation & Keynote Assembly (Laoag City Campus)',
+    18.1960,
+    120.5927,
     150, // 150m radius
     15,  // 15 min grace period
     'all',
@@ -77,9 +77,9 @@ function seed() {
   insertEvent.run(
     2,
     'College of Computer Studies Symposium',
-    'Emerging AI & Geofencing Research Presentation',
-    14.6010,
-    120.9855,
+    'Emerging AI & Geofencing Research Presentation (Batac Campus)',
+    18.0556,
+    120.5645,
     100,
     10,
     'College of Computer Studies',
