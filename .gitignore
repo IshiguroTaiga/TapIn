@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+client/node_modules/
+
+# Production builds
+client/dist/
+
+# Local Database & Uploads
+server/tapin.db
+server/tapin.db-journal
+server/tapin.db-wal
+server/tapin.db-shm
+*.db
+*.db-shm
+*.db-wal
+uploads/
+*.log
+
+# Environment variables
+.env
+.env.local
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

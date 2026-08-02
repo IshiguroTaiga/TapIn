@@ -1,0 +1,23 @@
+{
+  "short_name": "TapIn",
+  "name": "TapIn - Geofencing Attendance & Spoof Detection",
+  "icons": [
+    {
+      "src": "pwa-192x192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "pwa-512x512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#0f172a",
+  "theme_color": "#4f46e5",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "description": "Geofencing-based real-time university attendance system with GPS spoofing detection module."
+}

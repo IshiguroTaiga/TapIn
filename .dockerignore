@@ -1,0 +1,10 @@
+node_modules
+client/node_modules
+client/dist
+.git
+.gitignore
+server/tapin.db
+server/tapin.db-journal
+server/tapin.db-wal
+uploads
+*.log

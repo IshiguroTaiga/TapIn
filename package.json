@@ -1,0 +1,38 @@
+{
+  "name": "tapin",
+  "version": "1.0.0",
+  "description": "Geofencing-based real-time university attendance system with GPS spoofing-detection research module",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "seed": "node server/seed.js",
+    "build": "cd client && npm install && npm run build",
+    "eval:rule": "node server/scripts/evalSpoofDetector.js --strategy rule-based",
+    "eval:ml": "node server/scripts/evalSpoofDetector.js --strategy ml-classifier",
+    "generate-dataset": "node server/scripts/generateSampleDataset.js"
+  },
+  "keywords": [
+    "geofencing",
+    "attendance",
+    "gps-spoofing",
+    "research",
+    "pwa",
+    "socket.io",
+    "sqlite"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "better-sqlite3": "^11.1.2",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.5",
+    "csv-parser": "^3.2.0",
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.1",
+    "sqlite3": "^5.1.7",
+    "socket.io": "^4.8.1",
+    "xlsx": "^0.18.5"
+  }
+}
