@@ -12,7 +12,7 @@
 • **Geofence Distance Meter**: Calculates live distance from the event center using the Haversine formula.
 • **Live Geofence Radar Map**: Interactive live map preview showing the event center, the glowing geofence perimeter circle, student position pin, and GPS accuracy range overlay.                                       
 • **Live Grace Period Countdown**: Triggers a 15-minute countdown timer if a student steps outside the perimeter. If they re-enter before the timer expires, countdown resets; if expired, action is logged as `Borderline` / `Grace Exceeded` without locking out time-outs.
-• **Brand Header**: Features logo with tag: *"Skip the line and TapIn here!"* and subtle top-left "Admin Portal" link.                                                     
+• **Brand Header & Custom Logo**: Features official custom framed logo (`THerta_LogoWFrame.png`) with tag: *"Skip the line and TapIn here!"*, browser tab favicon integration, and subtle top-left "Admin Portal" link.                                                     
 
 ---
 

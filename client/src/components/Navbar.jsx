@@ -40,11 +40,11 @@ export default function Navbar({ activeTab, setActiveTab, onOpenLogin, onOpenPwa
         {/* Center: Brand Logo */}
         <div 
           onClick={() => setActiveTab('student')} 
-          className="flex items-center gap-2.5 cursor-pointer group"
+          className="flex items-center gap-3 cursor-pointer group"
         >
-          <div className="relative flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 shadow-lg shadow-indigo-500/20 group-hover:scale-105 transition-transform">
-            <MapPin className="w-5 h-5 text-white" />
-            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-slate-950"></span>
+          <div className="relative flex items-center justify-center w-10 h-10 rounded-xl bg-slate-900/90 border border-indigo-500/30 shadow-lg shadow-indigo-500/20 group-hover:scale-105 transition-transform overflow-hidden p-0.5">
+            <img src="/THerta_LogoWFrame.png" alt="TapIn Logo" className="w-full h-full object-contain rounded-lg" />
+            <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-slate-950"></span>
           </div>
           <div className="flex flex-col">
             <span className="text-xl font-bold tracking-tight text-white flex items-center gap-1">
