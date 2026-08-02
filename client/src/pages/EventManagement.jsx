@@ -23,6 +23,7 @@ export default function EventManagement() {
   const [editingEvent, setEditingEvent] = useState(null);
 
   // Form State (Default to Laoag City, Ilocos Norte)
+  const [customEventId, setCustomEventId] = useState('');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [centerLat, setCenterLat] = useState(18.1960);
@@ -57,6 +58,7 @@ export default function EventManagement() {
 
   const handleOpenCreateModal = () => {
     setEditingEvent(null);
+    setCustomEventId('');
     setName('');
     setDescription('');
     setCenterLat(18.1960);
@@ -75,6 +77,7 @@ export default function EventManagement() {
 
   const handleOpenEditModal = (event) => {
     setEditingEvent(event);
+    setCustomEventId(String(event.id));
     setName(event.name);
     setDescription(event.description || '');
     setCenterLat(event.center_lat);
@@ -103,6 +106,8 @@ export default function EventManagement() {
   const handleSaveEvent = async (e) => {
     e.preventDefault();
     const payload = {
+      id: customEventId ? parseInt(customEventId) : undefined,
+      new_id: customEventId ? parseInt(customEventId) : undefined,
       name,
       description,
       center_lat: parseFloat(centerLat),
@@ -264,8 +269,20 @@ export default function EventManagement() {
 
             <form onSubmit={handleSaveEvent} className="space-y-4 text-xs">
               
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="space-y-1">
+                  <label className="text-slate-300 font-medium">Event ID / Number</label>
+                  <input
+                    type="number"
+                    value={customEventId}
+                    onChange={(e) => setCustomEventId(e.target.value)}
+                    placeholder="Auto or Custom (e.g. 1, 101)"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono text-xs"
+                  />
+                  <span className="text-[10px] text-slate-500 block">Editable unique ID</span>
+                </div>
+
+                <div className="space-y-1 sm:col-span-2">
                   <label className="text-slate-300 font-medium">Event Name</label>
                   <input
                     type="text"
@@ -276,19 +293,19 @@ export default function EventManagement() {
                     required
                   />
                 </div>
+              </div>
 
-                <div className="space-y-1">
-                  <label className="text-slate-300 font-medium">Status</label>
-                  <select
-                    value={status}
-                    onChange={(e) => setStatus(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white"
-                  >
-                    <option value="active">Active (Open for Attendance)</option>
-                    <option value="upcoming">Upcoming</option>
-                    <option value="closed">Closed / Finished</option>
-                  </select>
-                </div>
+              <div className="space-y-1">
+                <label className="text-slate-300 font-medium">Status</label>
+                <select
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white"
+                >
+                  <option value="active">Active (Open for Attendance)</option>
+                  <option value="upcoming">Upcoming</option>
+                  <option value="closed">Closed / Finished</option>
+                </select>
               </div>
 
               <div className="space-y-1">

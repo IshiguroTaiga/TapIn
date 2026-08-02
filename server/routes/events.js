@@ -50,6 +50,7 @@ router.get('/:id', (req, res) => {
 // Create new event
 router.post('/', authenticateToken, (req, res) => {
   const {
+    id,
     name,
     description,
     center_lat,
@@ -67,12 +68,26 @@ router.post('/', authenticateToken, (req, res) => {
     return res.status(400).json({ error: 'Name, center latitude, and center longitude required' });
   }
 
-  const result = db.prepare(`
-    INSERT INTO events (name, description, center_lat, center_lng, radius_m, grace_minutes, college_filter, course_filter, year_filter, status, created_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(name, description || '', parseFloat(center_lat), parseFloat(center_lng), parseFloat(radius_m), parseInt(grace_minutes), college_filter, course_filter, year_filter, status, req.user.id);
+  let eventId;
+  if (id !== undefined && id !== null && String(id).trim() !== '') {
+    const parsedId = parseInt(id);
+    const existing = db.prepare(`SELECT id FROM events WHERE id = ?`).get(parsedId);
+    if (existing) {
+      return res.status(400).json({ error: `Event ID #${parsedId} is already in use. Please enter a different ID.` });
+    }
 
-  const eventId = result.lastInsertRowid;
+    db.prepare(`
+      INSERT INTO events (id, name, description, center_lat, center_lng, radius_m, grace_minutes, college_filter, course_filter, year_filter, status, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(parsedId, name, description || '', parseFloat(center_lat), parseFloat(center_lng), parseFloat(radius_m), parseInt(grace_minutes), college_filter, course_filter, year_filter, status, req.user.id);
+    eventId = parsedId;
+  } else {
+    const result = db.prepare(`
+      INSERT INTO events (name, description, center_lat, center_lng, radius_m, grace_minutes, college_filter, course_filter, year_filter, status, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(name, description || '', parseFloat(center_lat), parseFloat(center_lng), parseFloat(radius_m), parseInt(grace_minutes), college_filter, course_filter, year_filter, status, req.user.id);
+    eventId = result.lastInsertRowid;
+  }
 
   // Insert windows
   const insertWindow = db.prepare(`
@@ -94,6 +109,7 @@ router.post('/', authenticateToken, (req, res) => {
 router.put('/:id', authenticateToken, (req, res) => {
   const { id } = req.params;
   const {
+    new_id,
     name,
     description,
     center_lat,
@@ -107,9 +123,33 @@ router.put('/:id', authenticateToken, (req, res) => {
     windows
   } = req.body;
 
-  const event = db.prepare(`SELECT * FROM events WHERE id = ?`).get(id);
+  let event = db.prepare(`SELECT * FROM events WHERE id = ?`).get(id);
   if (!event) {
     return res.status(404).json({ error: 'Event not found' });
+  }
+
+  let activeId = parseInt(id);
+
+  // Handle changing Event ID if new_id is provided and different
+  if (new_id !== undefined && new_id !== null && String(new_id).trim() !== '' && parseInt(new_id) !== activeId) {
+    const targetId = parseInt(new_id);
+    const existing = db.prepare(`SELECT id FROM events WHERE id = ?`).get(targetId);
+    if (existing) {
+      return res.status(400).json({ error: `Event ID #${targetId} is already in use.` });
+    }
+
+    try {
+      db.pragma('foreign_keys = OFF');
+      db.prepare(`UPDATE events SET id = ? WHERE id = ?`).run(targetId, activeId);
+      db.prepare(`UPDATE event_windows SET event_id = ? WHERE event_id = ?`).run(targetId, activeId);
+      db.prepare(`UPDATE attendance_logs SET event_id = ? WHERE event_id = ?`).run(targetId, activeId);
+      db.prepare(`UPDATE violations SET event_id = ? WHERE event_id = ?`).run(targetId, activeId);
+      db.pragma('foreign_keys = ON');
+      activeId = targetId;
+    } catch (err) {
+      db.pragma('foreign_keys = ON');
+      return res.status(500).json({ error: 'Failed to update Event ID: ' + err.message });
+    }
   }
 
   db.prepare(`
@@ -136,22 +176,22 @@ router.put('/:id', authenticateToken, (req, res) => {
     course_filter || event.course_filter,
     year_filter || event.year_filter,
     status || event.status,
-    id
+    activeId
   );
 
   // Update windows if provided
   if (Array.isArray(windows)) {
-    db.prepare(`DELETE FROM event_windows WHERE event_id = ?`).run(id);
+    db.prepare(`DELETE FROM event_windows WHERE event_id = ?`).run(activeId);
     const insertWindow = db.prepare(`
       INSERT INTO event_windows (event_id, window_type, start_time, end_time)
       VALUES (?, ?, ?, ?)
     `);
     windows.forEach(w => {
-      insertWindow.run(id, w.window_type, w.start_time, w.end_time);
+      insertWindow.run(activeId, w.window_type, w.start_time, w.end_time);
     });
   }
 
-  res.json({ message: 'Event updated successfully' });
+  res.json({ message: 'Event updated successfully', newId: activeId });
 });
 
 // Delete event

@@ -51,7 +51,7 @@ export default function Navbar({ activeTab, setActiveTab, onOpenLogin, onOpenPwa
               Tap<span className="gradient-text">In</span>
             </span>
             <span className="text-[10px] tracking-wider uppercase text-slate-400 font-medium">
-              Geofence & Spoof Detection
+              Skip the line and TapIn here!
             </span>
           </div>
         </div>
