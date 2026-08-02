@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import io from 'socket.io-client';
+import LiveGeofenceMap from '../components/LiveGeofenceMap';
 import {
   Users,
   CheckCircle,
@@ -141,6 +142,24 @@ export default function AdminDashboard() {
           <span className="text-[10px] text-rose-500/80">Anomaly / Rejected</span>
         </div>
       </div>
+
+      {/* Live Campus Map & Geofence Perimeter Radar */}
+      {activeEvent && (
+        <div className="glass-card rounded-2xl p-4 border border-slate-800 space-y-2">
+          <div className="flex items-center justify-between text-xs text-slate-300">
+            <span className="font-bold flex items-center gap-1.5">
+              <Radio className="w-4 h-4 text-indigo-400 animate-pulse" />
+              Live Campus Map Telemetry ({activeEvent.name})
+            </span>
+            <span className="text-[11px] text-slate-400 font-mono">Geofence Perimeter: {activeEvent.radius_m}m</span>
+          </div>
+          <LiveGeofenceMap
+            event={activeEvent}
+            studentsList={students}
+            height="300px"
+          />
+        </div>
+      )}
 
       {/* Main Content Area */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

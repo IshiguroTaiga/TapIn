@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
+import LiveGeofenceMap from '../components/LiveGeofenceMap';
 import {
   MapPin,
   Clock,
@@ -387,6 +388,19 @@ export default function StudentHome({ onOpenPwaNotice }) {
                 )}
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Live Visual Map Preview with Geofence Radius Circle Overlay */}
+        {activeEvent && (
+          <div className="pt-2">
+            <LiveGeofenceMap
+              event={activeEvent}
+              studentCoords={coords}
+              studentAccuracy={accuracy}
+              inRange={inRange}
+              height="220px"
+            />
           </div>
         )}
 
