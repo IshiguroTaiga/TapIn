@@ -79,7 +79,7 @@ function seed() {
 
     insertEvent.run(
       2,
-      'College of Computing and Information Sciences Symposium',
+      'College of Computing and Information Sciences',
       'Emerging AI & Geofencing Research Presentation (Batac Campus)',
       18.0556,
       120.5645,
