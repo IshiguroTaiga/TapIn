@@ -3,6 +3,7 @@ import axios from 'axios';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+import { MMSU_COLLEGES } from '../constants/colleges';
 import {
   FileText,
   Download,
@@ -197,10 +198,9 @@ export default function AttendanceLogs() {
             className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white"
           >
             <option value="all">All Colleges</option>
-            <option value="College of Computer Studies">College of Computer Studies</option>
-            <option value="College of Engineering">College of Engineering</option>
-            <option value="College of Business">College of Business</option>
-            <option value="College of Nursing">College of Nursing</option>
+            {MMSU_COLLEGES.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
           </select>
         </div>
 

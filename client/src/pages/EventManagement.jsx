@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import GeofenceMapPicker from '../components/GeofenceMapPicker';
+import { MMSU_COLLEGES } from '../constants/colleges';
 import {
   Calendar,
   Plus,
@@ -364,6 +365,20 @@ export default function EventManagement() {
                       className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-white font-bold"
                     />
                   </div>
+                </div>
+
+                <div className="space-y-1 pt-1">
+                  <label className="text-slate-400">Target College Filter</label>
+                  <select
+                    value={collegeFilter}
+                    onChange={(e) => setCollegeFilter(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-white text-xs"
+                  >
+                    <option value="all">All Colleges (General Assembly)</option>
+                    {MMSU_COLLEGES.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 

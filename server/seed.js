@@ -40,14 +40,14 @@ function seed() {
   `);
 
   const sampleStudents = [
-    ['23-140015', 'Micko Gabriel D. Permison', 4, 'BS Computer Science', 'College of Computer Studies'],
-    ['23-140016', 'Maria Clara Santos', 2, 'BS Information Technology', 'College of Computer Studies'],
-    ['22-140017', 'Jose Rizal', 4, 'BS Civil Engineering', 'College of Engineering'],
-    ['24-140018', 'Andres Bonifacio', 1, 'BS Mechanical Engineering', 'College of Engineering'],
-    ['23-140019', 'Emilio Aguinaldo', 3, 'BS Business Administration', 'College of Business'],
-    ['23-140020', 'Gabriela Silang', 2, 'BS Nursing', 'College of Nursing'],
-    ['22-140021', 'Apolinario Mabini', 4, 'BS Computer Science', 'College of Computer Studies'],
-    ['24-140022', 'Melchora Aquino', 1, 'BS Accountancy', 'College of Business']
+    ['23-140015', 'Micko Gabriel D. Permison', 4, 'BS Computer Science', 'College of Computing and Information Sciences'],
+    ['23-140016', 'Maria Clara Santos', 2, 'BS Information Technology', 'College of Computing and Information Sciences'],
+    ['22-140017', 'Jose Rizal', 4, 'BS Civil Engineering', 'Engineering'],
+    ['24-140018', 'Andres Bonifacio', 1, 'BS Mechanical Engineering', 'Engineering'],
+    ['23-140019', 'Emilio Aguinaldo', 3, 'BS Business Administration', 'Business, Economics & Accountancy'],
+    ['23-140020', 'Gabriela Silang', 2, 'BS Nursing', 'Health Sciences'],
+    ['22-140021', 'Apolinario Mabini', 4, 'BS Computer Science', 'College of Computing and Information Sciences'],
+    ['24-140022', 'Melchora Aquino', 1, 'BS Accountancy', 'Business, Economics & Accountancy']
   ];
 
   sampleStudents.forEach(st => insertStudent.run(...st));
@@ -76,13 +76,13 @@ function seed() {
 
   insertEvent.run(
     2,
-    'College of Computer Studies Symposium',
+    'College of Computing and Information Sciences Symposium',
     'Emerging AI & Geofencing Research Presentation (Batac Campus)',
     18.0556,
     120.5645,
     100,
     10,
-    'College of Computer Studies',
+    'College of Computing and Information Sciences',
     'all',
     'all',
     'active',
