@@ -62,7 +62,7 @@ function MainLayout() {
       {/* Footer */}
       <footer className="border-t border-slate-900 bg-slate-950/80 py-6 text-center text-xs text-slate-500 space-y-1">
         <div className="font-semibold text-slate-400">TapIn • University Geofencing & GPS Spoofing Detection Research Prototype</div>
-        <div>Built for DOST / University Research Thesis Project • Node.js + Express + SQLite + Socket.io + React PWA</div>
+        <div>Built by ur boi Ishi :3</div>
       </footer>
 
       {/* Modals */}
