@@ -40,14 +40,14 @@ function seed() {
   `);
 
   const sampleStudents = [
-    ['2023-00101', 'Juan Dela Cruz', 3, 'BS Computer Science', 'College of Computer Studies'],
-    ['2023-00102', 'Maria Clara Santos', 2, 'BS Information Technology', 'College of Computer Studies'],
-    ['2023-00103', 'Jose Rizal', 4, 'BS Civil Engineering', 'College of Engineering'],
-    ['2023-00104', 'Andres Bonifacio', 1, 'BS Mechanical Engineering', 'College of Engineering'],
-    ['2023-00105', 'Emilio Aguinaldo', 3, 'BS Business Administration', 'College of Business'],
-    ['2023-00106', 'Gabriela Silang', 2, 'BS Nursing', 'College of Nursing'],
-    ['2023-00107', 'Apolinario Mabini', 4, 'BS Computer Science', 'College of Computer Studies'],
-    ['2023-00108', 'Melchora Aquino', 1, 'BS Accountancy', 'College of Business']
+    ['23-140015', 'Juan Dela Cruz', 3, 'BS Computer Science', 'College of Computer Studies'],
+    ['23-140016', 'Maria Clara Santos', 2, 'BS Information Technology', 'College of Computer Studies'],
+    ['22-140017', 'Jose Rizal', 4, 'BS Civil Engineering', 'College of Engineering'],
+    ['24-140018', 'Andres Bonifacio', 1, 'BS Mechanical Engineering', 'College of Engineering'],
+    ['23-140019', 'Emilio Aguinaldo', 3, 'BS Business Administration', 'College of Business'],
+    ['23-140020', 'Gabriela Silang', 2, 'BS Nursing', 'College of Nursing'],
+    ['22-140021', 'Apolinario Mabini', 4, 'BS Computer Science', 'College of Computer Studies'],
+    ['24-140022', 'Melchora Aquino', 1, 'BS Accountancy', 'College of Business']
   ];
 
   sampleStudents.forEach(st => insertStudent.run(...st));

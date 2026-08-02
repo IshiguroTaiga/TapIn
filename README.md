@@ -89,7 +89,7 @@ http://localhost:5000
 
 | Role | Username | Password | Access Rights |
 | :--- | :--- | :--- | :--- |
-| **Student** | *No login needed* | *No login needed* | Enter Student ID (e.g. `2023-00101`) on homepage |
+| **Student** | *No login needed* | *No login needed* | Enter Student ID (e.g. `23-140015`) on homepage |
 | **Admin** | `admin` | `admin123` | Event management, live feed, attendance history, penalty engine |
 | **Superadmin** | `superadmin` | `super123` | Full admin privileges + Admin account creation/removal |
 

@@ -69,7 +69,7 @@ $$P(\text{spoof}) = \frac{1}{1 + e^{-z}}$$
                                                                                                                                                                                                                   
 | Role | Username | Password | Access Rights |
 | :--- | :--- | :--- | :--- |
-| **Student** | *No login needed* | *No login needed* | Enter Student ID (e.g., `2023-00101`) on home screen |
+| **Student** | *No login needed* | *No login needed* | Enter Student ID (e.g., `23-140015`) on home screen |
 | **Admin** | `admin` | `admin123` | Manage events, live monitoring feed, attendance history, penalty engine |
 | **Superadmin** | `superadmin` | `super123` | Full admin privileges + Admin account creation/removal |
 

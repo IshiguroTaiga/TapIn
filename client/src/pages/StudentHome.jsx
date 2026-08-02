@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 
 export default function StudentHome({ onOpenPwaNotice }) {
-  const [studentId, setStudentId] = useState('2023-00101');
+  const [studentId, setStudentId] = useState('23-140015');
   const [studentInfo, setStudentInfo] = useState(null);
   const [studentError, setStudentError] = useState(null);
   
@@ -245,12 +245,24 @@ export default function StudentHome({ onOpenPwaNotice }) {
     }
   };
 
-  const formatCountdown = (secs) => {
-    if (secs === null) return '00:00';
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
-    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  // Auto-format Student ID as xx-xxxxxx (e.g. 23-140015)
+  const handleStudentIdChange = (e) => {
+    let input = e.target.value.toUpperCase().replace(/[^0-9-]/g, '');
+    
+    // Auto-insert hyphen after 2 digits if user types raw digits (e.g., 23140015 -> 23-140015)
+    if (/^\d{3,}/.test(input) && !input.includes('-')) {
+      input = `${input.slice(0, 2)}-${input.slice(2, 8)}`;
+    }
+
+    // Limit length to 9 chars (2 digits + 1 hyphen + 6 digits)
+    if (input.length > 9) {
+      input = input.slice(0, 9);
+    }
+
+    setStudentId(input);
   };
+
+  const isIdFormatValid = /^\d{2}-\d{6}$/.test(studentId.trim());
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-8 space-y-6">
@@ -417,16 +429,29 @@ export default function StudentHome({ onOpenPwaNotice }) {
         </div>
 
         <div className="space-y-2">
-          <label className="text-xs font-medium text-slate-300">Student ID Number</label>
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-medium text-slate-300">Student ID Number</label>
+            <span className="text-[11px] font-mono text-indigo-400">Format: xx-xxxxxx</span>
+          </div>
           <input
             type="text"
             value={studentId}
-            onChange={(e) => setStudentId(e.target.value)}
-            placeholder="e.g. 2023-00101"
-            className="w-full px-4 py-3 rounded-xl bg-slate-900/90 border border-slate-800 text-lg font-mono text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition-colors tracking-wider"
+            onChange={handleStudentIdChange}
+            placeholder="xx-xxxxxx (e.g. 23-140015)"
+            maxLength={9}
+            className={`w-full px-4 py-3 rounded-xl bg-slate-900/90 border text-lg font-mono text-white placeholder-slate-600 focus:outline-none transition-colors tracking-wider ${
+              studentId && !isIdFormatValid ? 'border-amber-500/60 focus:border-amber-500' : 'border-slate-800 focus:border-indigo-500'
+            }`}
           />
 
-          {studentError && (
+          {studentId && !isIdFormatValid && (
+            <p className="text-[11px] text-amber-400 flex items-center gap-1">
+              <AlertTriangle className="w-3.5 h-3.5" />
+              Student ID must follow format xx-xxxxxx (e.g. 23-140015)
+            </p>
+          )}
+
+          {studentError && isIdFormatValid && (
             <p className="text-xs text-rose-400 flex items-center gap-1">
               <AlertTriangle className="w-3.5 h-3.5" />
               {studentError}
