@@ -24,12 +24,12 @@ export default function LiveGeofenceMap({
       const map = L.map(mapContainerRef.current, {
         center: [event.center_lat, event.center_lng],
         zoom: 16,
-        zoomControl: true
+        zoomControl: true,
+        attributionControl: false
       });
 
       // Dark CartoDB Map Tiles
       L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; CARTO &copy; OpenStreetMap',
         subdomains: 'abcd',
         maxZoom: 19
       }).addTo(map);

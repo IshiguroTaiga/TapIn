@@ -29,12 +29,12 @@ export default function GeofenceMapPicker({ centerLat, centerLng, radiusMeters, 
         minZoom: 9,
         maxZoom: 19,
         maxBounds: ILOCOS_NORTE_BOUNDS,
-        maxBoundsViscosity: 0.8
+        maxBoundsViscosity: 0.8,
+        attributionControl: false
       });
 
       // Dark CartoDB Tile Layer for sleek dark mode matching TapIn design
       L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://openstreetmap.org">OpenStreetMap</a>',
         subdomains: 'abcd',
         maxZoom: 19
       }).addTo(map);

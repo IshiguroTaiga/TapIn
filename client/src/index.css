@@ -37,3 +37,8 @@
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
+
+/* Hide Leaflet Watermarks & Attributions */
+.leaflet-control-attribution {
+  display: none !important;
+}
