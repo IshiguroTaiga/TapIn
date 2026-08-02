@@ -40,7 +40,7 @@ function seed() {
   `);
 
   const sampleStudents = [
-    ['23-140015', 'Juan Dela Cruz', 3, 'BS Computer Science', 'College of Computer Studies'],
+    ['23-140015', 'Micko Gabriel D. Permison', 4, 'BS Computer Science', 'College of Computer Studies'],
     ['23-140016', 'Maria Clara Santos', 2, 'BS Information Technology', 'College of Computer Studies'],
     ['22-140017', 'Jose Rizal', 4, 'BS Civil Engineering', 'College of Engineering'],
     ['24-140018', 'Andres Bonifacio', 1, 'BS Mechanical Engineering', 'College of Engineering'],
