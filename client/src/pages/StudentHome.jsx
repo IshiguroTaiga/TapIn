@@ -246,6 +246,13 @@ export default function StudentHome({ onOpenPwaNotice }) {
     }
   };
 
+  const formatCountdown = (secs) => {
+    if (secs === null || secs === undefined) return '00:00';
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
+
   // Auto-format Student ID as xx-xxxxxx (e.g. 23-140015)
   const handleStudentIdChange = (e) => {
     let input = e.target.value.toUpperCase().replace(/[^0-9-]/g, '');
