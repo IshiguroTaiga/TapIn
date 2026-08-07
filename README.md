@@ -51,69 +51,6 @@ Built as an independent, testable service that evaluates location reports before
 
 ---
 
-## 🚀 Quick Setup & Demonstration Guide
-
-### Prerequisites
-- Node.js (v18+)
-- npm (v9+)
-
-### 1. Installation
-In the project root directory, run:
-```bash
-npm install
-```
-Then build the client PWA bundle:
-```bash
-npm run build
-```
-
-### 2. Seed Database
-Initialize SQLite database and seed initial superadmin, admins, events, and sample student records:
-```bash
-npm run seed
-```
-
-### 3. Run Application
-Start the unified backend server on Port 5000:
-```bash
-npm start
-```
-Open your browser and navigate to:
-```
-http://localhost:5000
-```
-
----
-
-## 🔐 Credentials for Demo
-
-| Role | Username | Password | Access Rights |
-| :--- | :--- | :--- | :--- |
-| **Student** | *No login needed* | *No login needed* | Enter Student ID (e.g. `23-140015`) on homepage |
-| **Admin** | `admin` | `admin123` | Event management, live feed, attendance history, penalty engine |
-| **Superadmin** | `superadmin` | `super123` | Full admin privileges + Admin account creation/removal |
-
----
-
-## 🔬 Running the GPS Spoof Research Evaluation Harness
-
-To run the research harness CLI tool against the included labeled dataset (`sample_traces.csv`):
-
-### Generate Synthetic Test Dataset:
-```bash
-npm run generate-dataset
-```
-
-### Evaluate Rule-Based Strategy:
-```bash
-npm run eval:rule
-```
-
-### Evaluate ML Classifier Strategy:
-```bash
-npm run eval:ml
-```
-
 ### Live Interactive Lab UI:
 Log in as Admin or Superadmin and navigate to the **Spoof Research Lab** tab to test custom telemetry inputs and view harness outputs interactively in the web app.
 
@@ -169,5 +106,6 @@ TapIn/
 
 ---
 
-## 📄 License & Thesis Citation
+## 📄 NOTE:
 Designed as a research prototype for university event attendance & location telemetry integrity verification.
+Generated btw so dont expect this to not have a % of AI content aint no one not lazy enough to read and write all these in short period of time
