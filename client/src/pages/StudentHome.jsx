@@ -282,9 +282,9 @@ export default function StudentHome({ onOpenPwaNotice }) {
         </div>
       ) : activeEvent ? (
         <div className="glass-panel rounded-2xl p-6 border border-indigo-500/30 relative overflow-hidden shadow-xl">
-          <div className="absolute -top-12 -right-12 w-40 h-40 bg-indigo-500/10 rounded-full blur-2xl"></div>
+          <div className="absolute -top-12 -right-12 w-40 h-40 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none"></div>
           
-          <div className="flex items-start justify-between">
+          <div className="relative z-10 flex items-start justify-between">
             <div className="space-y-1">
               <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
@@ -296,7 +296,7 @@ export default function StudentHome({ onOpenPwaNotice }) {
             
             <button
               onClick={fetchActiveEvent}
-              className="p-2 rounded-xl bg-slate-900/60 text-slate-400 hover:text-white transition-colors"
+              className="p-2 rounded-xl bg-slate-900/60 text-slate-400 hover:text-white transition-colors cursor-pointer"
               title="Refresh Event"
             >
               <RefreshCw className="w-4 h-4" />
