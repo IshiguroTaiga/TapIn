@@ -48,15 +48,20 @@ export default function StudentHome({ onOpenPwaNotice }) {
   const watchIdRef = useRef(null);
   const graceTimerRef = useRef(null);
 
-  // Fetch active events on load
+  // Fetch active events (filtered strictly for active status & student college eligibility)
   useEffect(() => {
-    fetchActiveEvent();
-  }, []);
+    fetchActiveEvents();
+  }, [studentInfo?.college]);
 
-  const fetchActiveEvent = async () => {
+  const fetchActiveEvents = async (targetCollege = studentInfo?.college) => {
     setEventLoading(true);
     try {
-      const res = await axios.get('/api/events/active/all');
+      const res = await axios.get('/api/events/active/all', {
+        params: {
+          student_id: studentId.trim(),
+          college: targetCollege || 'all'
+        }
+      });
       const eventsList = res.data || [];
       setAllActiveEvents(eventsList);
       
@@ -92,6 +97,7 @@ export default function StudentHome({ onOpenPwaNotice }) {
         const res = await axios.get(`/api/students/lookup/${encodeURIComponent(studentId.trim())}`);
         setStudentInfo(res.data);
         setStudentError(null);
+        fetchActiveEvents(res.data?.college);
       } catch (err) {
         setStudentInfo(null);
         setStudentError('Student ID not found in university database');

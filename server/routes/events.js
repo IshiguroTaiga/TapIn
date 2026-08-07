@@ -36,11 +36,29 @@ router.get('/active', (req, res) => {
   res.json(activeEvent);
 });
 
-// Get all active events for student event switching
+// Get all active events for student event switching (strictly active & college filtered)
 router.get('/active/all', (req, res) => {
-  const activeEvents = db.prepare(`
-    SELECT * FROM events WHERE status = 'active' ORDER BY id DESC
-  `).all();
+  const { college, student_id } = req.query;
+
+  let targetCollege = college;
+  if (!targetCollege && student_id) {
+    const student = db.prepare(`SELECT college FROM students WHERE student_id = ?`).get(String(student_id).trim());
+    if (student) {
+      targetCollege = student.college;
+    }
+  }
+
+  let query = `SELECT * FROM events WHERE status = 'active'`;
+  const params = [];
+
+  if (targetCollege && targetCollege !== 'all') {
+    query += ` AND (college_filter = 'all' OR college_filter = ?)`;
+    params.push(targetCollege);
+  }
+
+  query += ` ORDER BY id DESC`;
+
+  const activeEvents = db.prepare(query).all(...params);
 
   const getWindows = db.prepare(`SELECT * FROM event_windows WHERE event_id = ? ORDER BY start_time ASC`);
   activeEvents.forEach(e => {

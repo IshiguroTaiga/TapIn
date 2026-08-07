@@ -36,6 +36,13 @@ router.post('/submit', (req, res) => {
     return res.status(400).json({ error: 'No active university event is currently open for attendance recording.' });
   }
 
+  // 3. Verify College Eligibility Filter (Strict restriction)
+  if (activeEvent.college_filter !== 'all' && activeEvent.college_filter !== student.college) {
+    return res.status(403).json({
+      error: `Access Restricted! This event is exclusive to ${activeEvent.college_filter} students. Your recorded college is ${student.college}.`
+    });
+  }
+
   // 3. Auto-detect action (Time In vs Time Out) if not explicitly forced
   const existingLogs = db.prepare(`
     SELECT * FROM attendance_logs 
