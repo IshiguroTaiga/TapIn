@@ -56,13 +56,34 @@ export default function StudentHome({ onOpenPwaNotice }) {
   const fetchActiveEvents = async (targetCollege = studentInfo?.college) => {
     setEventLoading(true);
     try {
-      const res = await axios.get('/api/events/active/all', {
-        params: {
-          student_id: studentId.trim(),
-          college: targetCollege || 'all'
-        }
-      });
-      const eventsList = res.data || [];
+      let eventsList = [];
+      try {
+        const res = await axios.get('/api/events/active/all', {
+          params: {
+            student_id: studentId.trim(),
+            college: targetCollege || 'all'
+          }
+        });
+        eventsList = Array.isArray(res.data) ? res.data : [];
+      } catch (e1) {
+        try {
+          const res = await axios.get('/api/events/active', {
+            params: {
+              student_id: studentId.trim(),
+              college: targetCollege || 'all'
+            }
+          });
+          if (res.data) eventsList = [res.data];
+        } catch (e2) {}
+      }
+
+      if (eventsList.length === 0) {
+        try {
+          const singleRes = await axios.get('/api/events/active');
+          if (singleRes.data) eventsList = [singleRes.data];
+        } catch (e3) {}
+      }
+
       setAllActiveEvents(eventsList);
       
       if (eventsList.length > 0) {

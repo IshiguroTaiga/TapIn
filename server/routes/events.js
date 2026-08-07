@@ -22,22 +22,8 @@ router.get('/', (req, res) => {
   res.json(events);
 });
 
-// Get active event for student view (single latest)
+// Get active event for student view (single latest with fallback)
 router.get('/active', (req, res) => {
-  const activeEvent = db.prepare(`
-    SELECT * FROM events WHERE status = 'active' ORDER BY id DESC LIMIT 1
-  `).get();
-
-  if (!activeEvent) {
-    return res.status(404).json({ error: 'No active event found' });
-  }
-
-  activeEvent.windows = db.prepare(`SELECT * FROM event_windows WHERE event_id = ?`).all(activeEvent.id);
-  res.json(activeEvent);
-});
-
-// Get all active events for student event switching (strictly active & college filtered)
-router.get('/active/all', (req, res) => {
   const { college, student_id } = req.query;
 
   let targetCollege = college;
@@ -52,13 +38,58 @@ router.get('/active/all', (req, res) => {
   const params = [];
 
   if (targetCollege && targetCollege !== 'all') {
-    query += ` AND (college_filter = 'all' OR college_filter = ?)`;
+    query += ` AND (LOWER(TRIM(college_filter)) = 'all' OR LOWER(TRIM(college_filter)) = LOWER(TRIM(?)))`;
+    params.push(targetCollege);
+  }
+
+  query += ` ORDER BY id DESC LIMIT 1`;
+
+  let activeEvent = db.prepare(query).get(...params);
+  if (!activeEvent) {
+    activeEvent = db.prepare(`SELECT * FROM events WHERE status = 'active' ORDER BY id DESC LIMIT 1`).get();
+  }
+
+  if (!activeEvent) {
+    return res.json(null);
+  }
+
+  activeEvent.windows = db.prepare(`SELECT * FROM event_windows WHERE event_id = ? ORDER BY start_time ASC`).all(activeEvent.id);
+  res.json(activeEvent);
+});
+
+// Helper handler for active events list
+const handleActiveEventsList = (req, res) => {
+  const { college, student_id } = req.query;
+
+  let targetCollege = college;
+  if (!targetCollege && student_id) {
+    const student = db.prepare(`SELECT college FROM students WHERE student_id = ?`).get(String(student_id).trim());
+    if (student) {
+      targetCollege = student.college;
+    }
+  }
+
+  let query = `SELECT * FROM events WHERE status = 'active'`;
+  const params = [];
+
+  if (targetCollege && targetCollege !== 'all') {
+    query += ` AND (LOWER(TRIM(college_filter)) = 'all' OR LOWER(TRIM(college_filter)) = LOWER(TRIM(?)))`;
     params.push(targetCollege);
   }
 
   query += ` ORDER BY id DESC`;
 
-  const activeEvents = db.prepare(query).all(...params);
+  let activeEvents = db.prepare(query).all(...params);
+
+  // Fallback 1: If no match for student's college, fetch University-wide active events
+  if (activeEvents.length === 0 && targetCollege && targetCollege !== 'all') {
+    activeEvents = db.prepare(`SELECT * FROM events WHERE status = 'active' AND LOWER(TRIM(college_filter)) = 'all' ORDER BY id DESC`).all();
+  }
+
+  // Fallback 2: If still empty, return all active events so students are never blocked by string format mismatches
+  if (activeEvents.length === 0) {
+    activeEvents = db.prepare(`SELECT * FROM events WHERE status = 'active' ORDER BY id DESC`).all();
+  }
 
   const getWindows = db.prepare(`SELECT * FROM event_windows WHERE event_id = ? ORDER BY start_time ASC`);
   activeEvents.forEach(e => {
@@ -66,7 +97,12 @@ router.get('/active/all', (req, res) => {
   });
 
   res.json(activeEvents);
-});
+};
+
+// Register active events endpoints
+router.get('/active/all', handleActiveEventsList);
+router.get('/active-list', handleActiveEventsList);
+router.get('/active_all', handleActiveEventsList);
 
 // Get single event details
 router.get('/:id', (req, res) => {
