@@ -16,6 +16,8 @@ import {
   FileCode
 } from 'lucide-react';
 
+import io from 'socket.io-client';
+
 export default function AttendanceLogs() {
   const [logs, setLogs] = useState([]);
   const [events, setEvents] = useState([]);
@@ -32,6 +34,15 @@ export default function AttendanceLogs() {
   useEffect(() => {
     fetchEvents();
     fetchLogs();
+
+    const socket = io();
+    socket.on('attendance_updated', () => {
+      fetchLogs();
+    });
+
+    return () => {
+      socket.disconnect();
+    };
   }, []);
 
   const fetchEvents = async () => {

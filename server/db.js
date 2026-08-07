@@ -88,6 +88,11 @@ function initDb() {
       description TEXT NOT NULL,
       default_penalty TEXT DEFAULT 'Warning'
     );
+
+    CREATE INDEX IF NOT EXISTS idx_logs_event_student ON attendance_logs (event_id, student_id);
+    CREATE INDEX IF NOT EXISTS idx_logs_event_timestamp ON attendance_logs (event_id, timestamp DESC);
+    CREATE INDEX IF NOT EXISTS idx_events_status ON events (status);
+    CREATE INDEX IF NOT EXISTS idx_violations_event ON violations (event_id);
   `);
 }
 

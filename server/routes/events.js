@@ -113,6 +113,10 @@ router.post('/', authenticateToken, requireRole(['admin', 'superadmin']), (req, 
     insertWindow.run(eventId, w.window_type, w.start_time, w.end_time);
   });
 
+  // Emit socket event for real-time admin sync
+  const reqIo = req.app.get('io');
+  if (reqIo) reqIo.emit('events_updated', { action: 'create', eventId });
+
   res.status(201).json({
     message: 'Event created successfully',
     eventId
@@ -205,6 +209,10 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'superadmin']), (req
     });
   }
 
+  // Emit socket event for real-time admin sync
+  const reqIo = req.app.get('io');
+  if (reqIo) reqIo.emit('events_updated', { action: 'update', eventId: activeId });
+
   res.json({ message: 'Event updated successfully', newId: activeId });
 });
 
@@ -217,6 +225,11 @@ router.delete('/:id', authenticateToken, requireRole(['admin', 'superadmin']), (
   }
 
   db.prepare(`DELETE FROM events WHERE id = ?`).run(id);
+
+  // Emit socket event for real-time admin sync
+  const reqIo = req.app.get('io');
+  if (reqIo) reqIo.emit('events_updated', { action: 'delete', eventId: id });
+
   res.json({ message: 'Event deleted successfully' });
 });
 

@@ -225,13 +225,16 @@ export default function StudentHome({ onOpenPwaNotice }) {
   };
 
   // Submit Time In / Time Out Attendance
+  // Anti-Spoof Simulation State for Live Testing & Demonstrations
+  const [simulatedSpoofScenario, setSimulatedSpoofScenario] = useState('none');
+
   const handleSubmitAttendance = async () => {
     if (!studentId || !studentInfo) {
       setSubmissionError('Please enter a valid Student ID');
       return;
     }
 
-    if (!coords) {
+    if (!coords && simulatedSpoofScenario === 'none') {
       setSubmissionError('Please grant location access before logging attendance.');
       return;
     }
@@ -240,15 +243,30 @@ export default function StudentHome({ onOpenPwaNotice }) {
     setSubmissionError(null);
     setSubmissionResult(null);
 
+    let submitLat = coords?.lat || (activeEvent ? activeEvent.center_lat : 18.1960);
+    let submitLng = coords?.lng || (activeEvent ? activeEvent.center_lng : 120.5927);
+    let submitAcc = accuracy || 5;
+    let submitMotion = motionData;
+
+    if (simulatedSpoofScenario === 'teleport' && activeEvent) {
+      submitLat = activeEvent.center_lat + 0.3; // ~33km away teleport
+      submitLng = activeEvent.center_lng + 0.3;
+    } else if (simulatedSpoofScenario === 'static_accuracy') {
+      submitAcc = 0.1; // unrealistically exact static accuracy
+    } else if (simulatedSpoofScenario === 'sensor_mismatch') {
+      submitLat = (activeEvent ? activeEvent.center_lat : 18.1960) + 0.05;
+      submitMotion = { accelX: 0, accelY: 0, accelZ: 0 };
+    }
+
     try {
       const res = await axios.post('/api/attendance/submit', {
         student_id: studentId.trim(),
         event_id: activeEvent?.id,
-        lat: coords.lat,
-        lng: coords.lng,
-        accuracy,
+        lat: submitLat,
+        lng: submitLng,
+        accuracy: submitAcc,
         timestamp: new Date().toISOString(),
-        motionData
+        motionData: submitMotion
       });
 
       setSubmissionResult(res.data);
@@ -532,6 +550,30 @@ export default function StudentHome({ onOpenPwaNotice }) {
               <p className="text-slate-400">{studentInfo.course} • {studentInfo.college}</p>
             </div>
           )}
+        </div>
+
+        {/* Anti-Spoof Test Scenario Switcher for Research Demonstrations */}
+        <div className="p-3.5 rounded-xl bg-purple-950/30 border border-purple-500/20 space-y-2 text-xs">
+          <div className="flex items-center justify-between">
+            <span className="font-bold text-purple-300 flex items-center gap-1.5">
+              <Zap className="w-3.5 h-3.5 text-purple-400" />
+              Anti-Spoofing Countermeasure Tester
+            </span>
+            <span className="text-[10px] text-purple-400 font-mono">Research Mode</span>
+          </div>
+          <p className="text-[11px] text-slate-400">
+            Simulate 3rd-party fake GPS apps or location anomalies to verify TapIn's anti-spoofing classification:
+          </p>
+          <select
+            value={simulatedSpoofScenario}
+            onChange={(e) => setSimulatedSpoofScenario(e.target.value)}
+            className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-purple-800/60 text-white text-xs font-semibold focus:outline-none focus:border-purple-500 cursor-pointer"
+          >
+            <option value="none">🟢 Normal Authentic GPS (Real Device Sensors)</option>
+            <option value="teleport">🚨 Fake GPS Teleport (33km Physics Anomaly)</option>
+            <option value="static_accuracy">🚨 Synthetic Static Accuracy (0.1m Static Range)</option>
+            <option value="sensor_mismatch">🚨 Sensor Motion Mismatch (Zero Accelerometer Acceleration)</option>
+          </select>
         </div>
 
         {/* Time In / Time Out Button */}
