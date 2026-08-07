@@ -571,7 +571,7 @@ export default function StudentHome({ onOpenPwaNotice }) {
               <div className="font-bold text-white text-sm flex items-center justify-between">
                 <span>{studentInfo.name}</span>
                 <span className="text-[10px] font-normal px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300">
-                  Year {studentInfo.year}
+                  Year {studentInfo.year} • Sec {studentInfo.section || 'A'}
                 </span>
               </div>
               <p className="text-slate-400">{studentInfo.course} • {studentInfo.college}</p>

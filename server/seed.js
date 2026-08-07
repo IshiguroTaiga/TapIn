@@ -37,12 +37,12 @@ function seed() {
   db.prepare(`DELETE FROM students WHERE student_id != '23-140015'`).run();
 
   const insertStudent = db.prepare(`
-    INSERT OR REPLACE INTO students (student_id, name, year, course, college)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT OR REPLACE INTO students (student_id, name, year, course, college, section)
+    VALUES (?, ?, ?, ?, ?, ?)
   `);
 
   const sampleStudents = [
-    ['23-140015', 'Micko Gabriel D. Permison', 4, 'BS Computer Science', 'College of Computing and Information Sciences']
+    ['23-140015', 'Micko Gabriel D. Permison', 4, 'BS Computer Science', 'College of Computing and Information Sciences', 'A']
   ];
 
   sampleStudents.forEach(st => insertStudent.run(...st));

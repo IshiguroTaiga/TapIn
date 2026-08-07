@@ -138,7 +138,8 @@ router.post('/submit', (req, res) => {
       name: student.name,
       year: student.year,
       course: student.course,
-      college: student.college
+      college: student.college,
+      section: student.section || 'A'
     },
     event: {
       id: activeEvent.id,
@@ -189,7 +190,7 @@ router.get('/live/:eventId', authenticateToken, (req, res) => {
 
   // Latest log per student for this event
   const latestLogs = db.prepare(`
-    SELECT l.*, s.name, s.year, s.course, s.college
+    SELECT l.*, s.name, s.year, s.course, s.college, s.section
     FROM attendance_logs l
     JOIN students s ON l.student_id = s.student_id
     WHERE l.event_id = ?
@@ -228,7 +229,7 @@ router.get('/history', authenticateToken, (req, res) => {
   const { event_id, college, course, year, status } = req.query;
 
   let query = `
-    SELECT l.*, s.name, s.year, s.course, s.college, e.name as event_name
+    SELECT l.*, s.name, s.year, s.course, s.college, s.section, e.name as event_name
     FROM attendance_logs l
     JOIN students s ON l.student_id = s.student_id
     JOIN events e ON l.event_id = e.id
@@ -267,7 +268,7 @@ router.get('/history', authenticateToken, (req, res) => {
 router.get('/export/csv', authenticateToken, (req, res) => {
   const { event_id } = req.query;
   let query = `
-    SELECT l.id, l.timestamp, l.student_id, s.name, s.college, s.course, s.year,
+    SELECT l.id, l.timestamp, l.student_id, s.name, s.college, s.course, s.year, s.section,
            l.action, l.in_range, l.trust_score, l.is_spoofed, l.spoof_flags, l.status, e.name as event_name
     FROM attendance_logs l
     JOIN students s ON l.student_id = s.student_id
@@ -282,7 +283,7 @@ router.get('/export/csv', authenticateToken, (req, res) => {
 
   const logs = db.prepare(query).all(...params);
 
-  const headers = ['Log ID', 'Timestamp', 'Student ID', 'Student Name', 'College', 'Course', 'Year', 'Action', 'In Range', 'Trust Score', 'Spoofed', 'Spoof Flags', 'Status', 'Event Name'];
+  const headers = ['Log ID', 'Timestamp', 'Student ID', 'Student Name', 'College', 'Course', 'Year', 'Section', 'Action', 'In Range', 'Trust Score', 'Spoofed', 'Spoof Flags', 'Status', 'Event Name'];
   const rows = logs.map(l => [
     l.id,
     l.timestamp,
@@ -291,6 +292,7 @@ router.get('/export/csv', authenticateToken, (req, res) => {
     `"${l.college}"`,
     `"${l.course}"`,
     l.year,
+    `"${l.section || 'A'}"`,
     l.action,
     l.in_range ? 'Yes' : 'No',
     l.trust_score,

@@ -314,7 +314,7 @@ export default function AdminDashboard() {
 
                       <td className="py-3 px-3 text-slate-400">
                         <div className="truncate max-w-[180px]">{s.college}</div>
-                        <div className="text-[10px] text-slate-500">{s.course} (Yr {s.year})</div>
+                        <div className="text-[10px] text-slate-500">{s.course} (Yr {s.year}, Sec {s.section || 'A'})</div>
                       </td>
 
                       <td className="py-3 px-3">
