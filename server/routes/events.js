@@ -48,7 +48,7 @@ router.get('/:id', (req, res) => {
 });
 
 // Create new event
-router.post('/', authenticateToken, (req, res) => {
+router.post('/', authenticateToken, requireRole(['admin', 'superadmin']), (req, res) => {
   const {
     id,
     name,
@@ -106,7 +106,7 @@ router.post('/', authenticateToken, (req, res) => {
 });
 
 // Update event
-router.put('/:id', authenticateToken, (req, res) => {
+router.put('/:id', authenticateToken, requireRole(['admin', 'superadmin']), (req, res) => {
   const { id } = req.params;
   const {
     new_id,
@@ -195,8 +195,13 @@ router.put('/:id', authenticateToken, (req, res) => {
 });
 
 // Delete event
-router.delete('/:id', authenticateToken, (req, res) => {
+router.delete('/:id', authenticateToken, requireRole(['admin', 'superadmin']), (req, res) => {
   const { id } = req.params;
+  const event = db.prepare(`SELECT id FROM events WHERE id = ?`).get(id);
+  if (!event) {
+    return res.status(404).json({ error: 'Event not found' });
+  }
+
   db.prepare(`DELETE FROM events WHERE id = ?`).run(id);
   res.json({ message: 'Event deleted successfully' });
 });

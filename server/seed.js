@@ -52,64 +52,6 @@ function seed() {
 
   sampleStudents.forEach(st => insertStudent.run(...st));
 
-  // 4. Seed Active Sample Events (Only if no events exist in database)
-  const eventCount = db.prepare(`SELECT COUNT(*) as count FROM events`).get().count;
-
-  if (eventCount === 0) {
-    console.log('[Seed] No existing events found. Inserting initial sample events...');
-    const insertEvent = db.prepare(`
-      INSERT INTO events (id, name, description, center_lat, center_lng, radius_m, grace_minutes, college_filter, course_filter, year_filter, status, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    insertEvent.run(
-      1,
-      'University Convocation 2026',
-      'Annual General Student Convocation & Keynote Assembly (Laoag City Campus)',
-      18.1960,
-      120.5927,
-      150, // 150m radius
-      15,  // 15 min grace period
-      'all',
-      'all',
-      'all',
-      'active',
-      1
-    );
-
-    insertEvent.run(
-      2,
-      'College of Computing and Information Sciences',
-      'Emerging AI & Geofencing Research Presentation (Batac Campus)',
-      18.0556,
-      120.5645,
-      100,
-      10,
-      'College of Computing and Information Sciences',
-      'all',
-      'all',
-      'active',
-      2
-    );
-
-    // 5. Seed Event Windows for Event 1 & 2
-    const insertWindow = db.prepare(`
-      INSERT INTO event_windows (id, event_id, window_type, start_time, end_time)
-      VALUES (?, ?, ?, ?, ?)
-    `);
-
-    const now = new Date();
-    const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 7, 0, 0);
-    const endToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 20, 0, 0);
-
-    insertWindow.run(1, 1, 'time_in', startToday.toISOString(), endToday.toISOString());
-    insertWindow.run(2, 1, 'time_out', startToday.toISOString(), endToday.toISOString());
-    insertWindow.run(3, 2, 'time_in', startToday.toISOString(), endToday.toISOString());
-    insertWindow.run(4, 2, 'time_out', startToday.toISOString(), endToday.toISOString());
-  } else {
-    console.log(`[Seed] Database already contains ${eventCount} event(s). Preserving existing events.`);
-  }
-
   console.log('[Seed] Database successfully seeded!');
 }
 

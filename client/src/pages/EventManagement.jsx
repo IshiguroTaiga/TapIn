@@ -140,7 +140,7 @@ export default function EventManagement() {
         await axios.delete(`/api/events/${id}`);
         fetchEvents();
       } catch (err) {
-        alert('Failed to delete event');
+        alert('Failed to delete event: ' + (err.response?.data?.error || err.message));
       }
     }
   };

@@ -9,12 +9,31 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (token) {
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-    } else {
-      delete axios.defaults.headers.common['Authorization'];
-    }
-  }, [token]);
+    // Request Interceptor: Attach Authorization header to all requests dynamically
+    const reqInterceptor = axios.interceptors.request.use((config) => {
+      const storedToken = localStorage.getItem('tapin_token');
+      if (storedToken) {
+        config.headers.Authorization = `Bearer ${storedToken}`;
+      }
+      return config;
+    }, (error) => Promise.reject(error));
+
+    // Response Interceptor: Automatically clear expired token on 401
+    const resInterceptor = axios.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        if (error.response && (error.response.status === 401 || (error.response.status === 403 && error.response.data?.error?.includes('token')))) {
+          logout();
+        }
+        return Promise.reject(error);
+      }
+    );
+
+    return () => {
+      axios.interceptors.request.eject(reqInterceptor);
+      axios.interceptors.response.eject(resInterceptor);
+    };
+  }, []);
 
   const login = async (username, password) => {
     setLoading(true);
@@ -25,7 +44,6 @@ export function AuthProvider({ children }) {
       setUser(user);
       localStorage.setItem('tapin_token', token);
       localStorage.setItem('tapin_user', JSON.stringify(user));
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       return { success: true };
     } catch (err) {
       return {
@@ -42,7 +60,6 @@ export function AuthProvider({ children }) {
     setUser(null);
     localStorage.removeItem('tapin_token');
     localStorage.removeItem('tapin_user');
-    delete axios.defaults.headers.common['Authorization'];
   };
 
   return (
