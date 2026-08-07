@@ -1,12 +1,52 @@
-# TapIn Project Documentation & Changelog
+# TapIn: Geofence-Based Attendance Monitoring System with Real-Time Analytics
+## Project Documentation & Technical Changelog
 
 ---
 
 ## 📌 Version 2.0 (Day 2 Updates & Enhancements)
 
-### 🚀 What Has Been Updated & Fixed
+### 🚀 What Has Been Updated & Implemented
 
-#### 1. 🔐 Event Deletion & RBAC Authorization Fixes
+#### 1. 🔬 Research Module & Thesis Claims Verification (Defense-Ready)
+- **Standalone Haversine Geofencing Engine (`server/services/haversine.js`)**:
+  - Modular spherical geometry calculation computing great-circle distance between coordinate pairs $(lat_1, lon_1)$ and $(lat_2, lon_2)$ using standard Earth radius $R = 6,371,000\text{ m}$:
+    $$\Delta\text{lat} = (\text{lat}_2 - \text{lat}_1) \cdot \frac{\pi}{180},\quad \Delta\text{lon} = (\text{lon}_2 - \text{lon}_1) \cdot \frac{\pi}{180}$$
+    $$a = \sin^2\left(\frac{\Delta\text{lat}}{2}\right) + \cos(\text{lat}_1 \cdot \frac{\pi}{180}) \cdot \cos(\text{lat}_2 \cdot \frac{\pi}{180}) \cdot \sin^2\left(\frac{\Delta\text{lon}}{2}\right)$$
+    $$c = 2 \cdot \operatorname{atan2}\left(\sqrt{a}, \sqrt{1-a}\right),\quad \text{distance} = R \cdot c$$
+  - Exposes `calculateDistance(lat1, lon1, lat2, lon2)` and `isWithinGeofence(lat, lon, centerLat, centerLon, radiusMeters)`.
+  - Fully integrated into `server/routes/attendance.js` to evaluate whether submitted telemetry falls within the event's perimeter radius.
+
+- **Dual Swappable Anti-Spoofing Architecture (`server/services/spoofDetection/`)**:
+  - Implemented via a clean **Strategy Pattern** facade (`SpoofDetector` in `index.js`), enabling runtime switching (`setStrategy('rule-based' | 'ml-classifier')`) and per-request overrides. Both strategies adhere to the unified interface `evaluate(currentTrace, history)`.
+  - **Strategy A — Rule-Based Weighted Scoring Strategy (`ruleBasedStrategy.js`, `heuristics.js`)**:
+    - Evaluates 4 multi-sensor heuristic checks against a 100-point trust score baseline:
+      1. *Implausible Speed*: Flagged if speed $> 15\text{ m/s}$ ($54\text{ km/h}$) or instantaneous teleportation ($\Delta t \le 0\text{ s}$ with $\Delta d > 5\text{ m}$). Penalty: $\min(50, \lfloor v \cdot 2 \rfloor)$.
+      2. *Accuracy Anomaly*: Flagged if precision $\le 0.2\text{ m}$ (unrealistic web Geolocation accuracy) or identical static accuracy across $\ge 3$ consecutive readings. Penalty: $-30$ to $-35$.
+      3. *Timestamp Irregularity*: Flagged if timestamp precedes previous report or repeats exact integer-second intervals ($1,000\text{ ms}$). Penalty: $-20$ to $-40$.
+      4. *Sensor Motion Mismatch*: Flagged if position changes $> 3\text{ m/s}$ while device accelerometer linear acceleration magnitude is stationary ($|\sqrt{x^2+y^2+z^2} - 9.81| < 0.08\text{ m/s}^2$). Penalty: $-35$.
+    - Classifies as spoofed if $\text{Trust Score} < 60$ or critical flag combinations trigger (`IMPLAUSIBLE_SPEED`, `TIMESTAMP_OUT_OF_ORDER`, `STATIC_ACCURACY_PATTERN`).
+  - **Strategy B — Machine Learning Logistic Regression Strategy (`mlStrategy.js`)**:
+    - Extracts continuous & binary feature vectors $(f_{\text{speed}}, f_{\text{accLow}}, f_{\text{staticAcc}}, f_{\text{timestamp}}, f_{\text{motion}})$ from raw telemetry and computes logit $z$:
+      $$z = w_0 + w_1 f_{\text{speed}} + w_2 f_{\text{accLow}} + w_3 f_{\text{staticAcc}} + w_4 f_{\text{timestamp}} + w_5 f_{\text{motion}}$$
+      $$\text{where } w_0 = -2.85, w_1 = 0.42, w_2 = 2.80, w_3 = 2.15, w_4 = 2.65, w_5 = 2.40$$
+    - Evaluates probability through Sigmoid activation $\sigma(z) = \frac{1}{1 + e^{-z}}$. Classifies as spoofed if $P(\text{spoof}) \ge 0.50$, outputting a trust score of $\operatorname{round}((1 - P(\text{spoof})) \times 100)$.
+
+- **CLI Evaluation Harness & Sample Dataset Generator (`server/scripts/`)**:
+  - `evalSpoofDetector.js`: Ingests labeled trace CSV files (`--dataset <path>` `--strategy <name>`) and outputs confusion matrix ($TP, FP, TN, FN$) along with complete academic metrics:
+    $$\text{Accuracy} = \frac{TP + TN}{TP + FP + TN + FN},\quad \text{Precision} = \frac{TP}{TP + FP}$$
+    $$\text{Recall (Sensitivity)} = \frac{TP}{TP + FN},\quad \text{Specificity (TNR)} = \frac{TN}{TN + FP}$$
+    $$\text{False Positive Rate (FPR)} = \frac{FP}{TN + FP},\quad \text{F1 Score} = \frac{2 \cdot \text{Precision} \cdot \text{Recall}}{\text{Precision} + \text{Recall}}$$
+  - `generateSampleDataset.js`: Generates baseline labeled university trace benchmarks (`sample_traces.csv`) simulating legitimate campus walks, teleport attacks, static mock location apps, and automated cadence scripts.
+  - NPM Scripts added to `package.json`: `npm run eval:rule`, `npm run eval:ml`, and `npm run generate-dataset`.
+
+- **Honest Thesis Defense Matrix**:
+  | Feature | Confirmed & Fully Implemented in Code | To Acknowledge to Defense Panel (Pilot / Data) |
+  | :--- | :--- | :--- |
+  | **Haversine Geofencing** | Pure JS spherical trigonometry ($R = 6,371\text{ km}$); centimeters precision. | Spherical model is optimal for campus radii ($< 5\text{ km}$) vs. ellipsoidal (WGS-84). |
+  | **Detection Strategies** | Strategy Pattern with swappable Rule-Based and ML Logistic Regression classifiers. | ML weights calibrated on baseline synthetic vectors; larger offline training planned for full deployment. |
+  | **Evaluation Harness** | Full CLI evaluation tool calculating Accuracy, Precision, Recall, Specificity, FPR, F1. | Benchmark dataset (`sample_traces.csv`, 34 records) is a synthetic validation suite for algorithm verification. |
+
+#### 2. 🔐 Event Deletion & RBAC Authorization Fixes
 - **Explicit Role Permissions**: Enforced `requireRole(['admin', 'superadmin'])` across `POST /api/events`, `PUT /api/events/:id`, and `DELETE /api/events/:id` so both Superadmins and Admins have explicit authority to create, update, and delete events.
 - **Resolved 403 Forbidden Issue**: Fixed HTTP 403 Forbidden errors when deleting events by implementing dynamic Axios Request Interceptors to attach `Authorization: Bearer <token>` on all HTTP methods (including `DELETE`).
 - **Standardized Auth Status Codes**: Updated JWT verification failure status in `server/middleware/auth.js` from `403` to `401 Unauthorized` (`Invalid or expired token`), reserving `403` for role permission mismatches (`Insufficient permissions`).

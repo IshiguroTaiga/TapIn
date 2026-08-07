@@ -1,6 +1,6 @@
-# TapIn — University Geofencing Attendance & GPS Spoofing Detection System
+# TapIn: Geofence-Based Attendance Monitoring System with Real-Time Analytics
 
-**TapIn** is a geofencing-based, real-time attendance system designed for university assemblies and events. It features a standalone **GPS Spoofing-Detection Module** as its core research contribution.
+**TapIn** is a geofencing-based, real-time university attendance monitoring and analytics system featuring a standalone **GPS Spoofing-Detection Research Module** with dual swappable classification strategies and an automated evaluation harness.
 
 ---
 
