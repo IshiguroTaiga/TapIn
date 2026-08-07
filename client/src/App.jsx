@@ -18,7 +18,7 @@ function MainLayout() {
   const [isPwaNoticeOpen, setIsPwaNoticeOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
+    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
       
       {/* Top Navigation */}
       <Navbar
@@ -29,7 +29,7 @@ function MainLayout() {
       />
 
       {/* Main View Area */}
-      <main className="flex-1 pb-16">
+      <main className="flex-1 w-full max-w-full pb-20 lg:pb-16 px-2 sm:px-4">
         {activeTab === 'student' && (
           <StudentHome onOpenPwaNotice={() => setIsPwaNoticeOpen(true)} />
         )}

@@ -273,30 +273,30 @@ export default function StudentHome({ onOpenPwaNotice }) {
   const isIdFormatValid = /^\d{2}-\d{6}$/.test(studentId.trim());
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8 space-y-6">
+    <div className="w-full max-w-2xl mx-auto px-1 sm:px-4 py-4 sm:py-8 space-y-4 sm:space-y-6">
       
       {/* Active Event Banner */}
       {eventLoading ? (
-        <div className="p-6 glass-card rounded-2xl animate-pulse flex items-center justify-center text-slate-400 text-sm">
+        <div className="p-4 sm:p-6 glass-card rounded-2xl animate-pulse flex items-center justify-center text-slate-400 text-sm">
           Loading active university event details...
         </div>
       ) : activeEvent ? (
-        <div className="glass-panel rounded-2xl p-6 border border-indigo-500/30 relative overflow-hidden shadow-xl">
+        <div className="glass-panel rounded-2xl p-4 sm:p-6 border border-indigo-500/30 relative overflow-hidden shadow-xl">
           <div className="absolute -top-12 -right-12 w-40 h-40 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none"></div>
           
-          <div className="relative z-10 flex items-start justify-between">
+          <div className="relative z-10 flex items-start justify-between gap-2">
             <div className="space-y-1">
               <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                 ACTIVE EVENT
               </span>
-              <h1 className="text-2xl font-bold text-white tracking-tight">{activeEvent.name}</h1>
+              <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">{activeEvent.name}</h1>
               <p className="text-xs text-slate-300">{activeEvent.description}</p>
             </div>
             
             <button
               onClick={fetchActiveEvent}
-              className="p-2 rounded-xl bg-slate-900/60 text-slate-400 hover:text-white transition-colors cursor-pointer"
+              className="p-2.5 rounded-xl bg-slate-900/60 text-slate-400 hover:text-white transition-colors cursor-pointer min-w-[44px] min-h-[44px] flex items-center justify-center shrink-0"
               title="Refresh Event"
             >
               <RefreshCw className="w-4 h-4" />
@@ -304,25 +304,25 @@ export default function StudentHome({ onOpenPwaNotice }) {
           </div>
 
           {/* Event Geofence Parameters */}
-          <div className="mt-4 pt-4 border-t border-slate-800/80 grid grid-cols-3 gap-3 text-center">
-            <div className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800">
-              <span className="text-[10px] uppercase text-slate-400 block font-medium">Radius</span>
-              <span className="text-sm font-bold text-indigo-400">{activeEvent.radius_m} meters</span>
+          <div className="mt-4 pt-4 border-t border-slate-800/80 grid grid-cols-3 gap-2 sm:gap-3 text-center">
+            <div className="p-2 sm:p-2.5 rounded-xl bg-slate-900/60 border border-slate-800">
+              <span className="text-[9px] sm:text-[10px] uppercase text-slate-400 block font-medium">Radius</span>
+              <span className="text-xs sm:text-sm font-bold text-indigo-400">{activeEvent.radius_m}m</span>
             </div>
-            <div className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800">
-              <span className="text-[10px] uppercase text-slate-400 block font-medium">Grace Window</span>
-              <span className="text-sm font-bold text-amber-400">{activeEvent.grace_minutes} mins</span>
+            <div className="p-2 sm:p-2.5 rounded-xl bg-slate-900/60 border border-slate-800">
+              <span className="text-[9px] sm:text-[10px] uppercase text-slate-400 block font-medium">Grace Window</span>
+              <span className="text-xs sm:text-sm font-bold text-amber-400">{activeEvent.grace_minutes}m</span>
             </div>
-            <div className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800">
-              <span className="text-[10px] uppercase text-slate-400 block font-medium">Target Filter</span>
-              <span className="text-sm font-bold text-purple-400 truncate block">
-                {activeEvent.college_filter === 'all' ? 'All Colleges' : activeEvent.college_filter}
+            <div className="p-2 sm:p-2.5 rounded-xl bg-slate-900/60 border border-slate-800">
+              <span className="text-[9px] sm:text-[10px] uppercase text-slate-400 block font-medium">Target</span>
+              <span className="text-xs sm:text-sm font-bold text-purple-400 truncate block">
+                {activeEvent.college_filter === 'all' ? 'All' : activeEvent.college_filter}
               </span>
             </div>
           </div>
         </div>
       ) : (
-        <div className="p-6 glass-card rounded-2xl border border-slate-800 text-center space-y-2">
+        <div className="p-4 sm:p-6 glass-card rounded-2xl border border-slate-800 text-center space-y-2">
           <AlertTriangle className="w-8 h-8 text-amber-400 mx-auto" />
           <h3 className="text-base font-bold text-white">No Active Event Right Now</h3>
           <p className="text-xs text-slate-400 max-w-md mx-auto">
@@ -332,20 +332,20 @@ export default function StudentHome({ onOpenPwaNotice }) {
       )}
 
       {/* Step 1: Location Access Request Card */}
-      <div className="glass-card rounded-2xl p-6 space-y-4 border border-slate-800">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className={`p-3 rounded-xl ${coords ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'}`}>
-              <Compass className={`w-6 h-6 ${coords ? 'animate-spin' : ''}`} style={{ animationDuration: '8s' }} />
+      <div className="glass-card rounded-2xl p-4 sm:p-6 space-y-4 border border-slate-800">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            <div className={`p-2.5 sm:p-3 rounded-xl shrink-0 ${coords ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'}`}>
+              <Compass className={`w-5 h-5 sm:w-6 sm:h-6 ${coords ? 'animate-spin' : ''}`} style={{ animationDuration: '8s' }} />
             </div>
             <div>
-              <h2 className="text-base font-bold text-white">1. Live Location Telemetry</h2>
-              <p className="text-xs text-slate-400">TapIn verifies attendance by matching your live GPS coordinates against event boundaries.</p>
+              <h2 className="text-sm sm:text-base font-bold text-white">1. Live Location Telemetry</h2>
+              <p className="text-[11px] sm:text-xs text-slate-400">Verifying GPS coordinates against geofence boundaries.</p>
             </div>
           </div>
 
           {coords && (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
               <CheckCircle className="w-3.5 h-3.5" />
               GPS Active
             </span>
@@ -353,37 +353,37 @@ export default function StudentHome({ onOpenPwaNotice }) {
         </div>
 
         {!coords ? (
-          <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-3">
+          <div className="p-3.5 sm:p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-3">
             <p className="text-xs text-slate-300 leading-relaxed">
-              To verify your presence without selfie biometrics or intrusive face scanning, TapIn uses your device's native browser Geolocation API.
+              To verify attendance seamlessly without selfie biometrics, TapIn uses your device's native browser Geolocation API.
             </p>
             <button
               onClick={requestLocation}
-              className="w-full py-3 px-4 rounded-xl font-medium text-xs bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition-all"
+              className="w-full min-h-[44px] py-3 px-4 rounded-xl font-bold text-xs bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition-all cursor-pointer"
             >
               <MapPin className="w-4 h-4" />
               <span>Allow Location Access</span>
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
-            <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-0.5">
-              <span className="text-[10px] text-slate-400">Distance to Center</span>
-              <div className={`text-base font-bold ${inRange ? 'text-emerald-400' : 'text-amber-400'}`}>
-                {distanceMeters !== null ? `${distanceMeters} meters` : 'Calculating...'}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
+            <div className="p-2.5 sm:p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-0.5">
+              <span className="text-[10px] text-slate-400 block">Distance to Center</span>
+              <div className={`text-sm sm:text-base font-bold ${inRange ? 'text-emerald-400' : 'text-amber-400'}`}>
+                {distanceMeters !== null ? `${distanceMeters}m` : 'Calculating...'}
               </div>
             </div>
 
-            <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-0.5">
-              <span className="text-[10px] text-slate-400">GPS Accuracy</span>
-              <div className="text-base font-bold text-indigo-300">
+            <div className="p-2.5 sm:p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-0.5">
+              <span className="text-[10px] text-slate-400 block">GPS Accuracy</span>
+              <div className="text-sm sm:text-base font-bold text-indigo-300">
                 ±{accuracy ? Math.round(accuracy * 10) / 10 : '--'} m
               </div>
             </div>
 
-            <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-0.5 col-span-2 sm:col-span-1">
-              <span className="text-[10px] text-slate-400">Geofence Status</span>
-              <div className="text-sm font-semibold">
+            <div className="p-2.5 sm:p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-0.5 col-span-2 sm:col-span-1">
+              <span className="text-[10px] text-slate-400 block">Geofence Status</span>
+              <div className="text-xs sm:text-sm font-semibold">
                 {inRange ? (
                   <span className="text-emerald-400 flex items-center gap-1">
                     <CheckCircle className="w-4 h-4" /> In Geofence
@@ -438,7 +438,7 @@ export default function StudentHome({ onOpenPwaNotice }) {
       </div>
 
       {/* Step 2: Student ID & Time In/Out Action */}
-      <div className="glass-card rounded-2xl p-6 space-y-5 border border-slate-800">
+      <div className="glass-card rounded-2xl p-4 sm:p-6 space-y-4 sm:space-y-5 border border-slate-800">
         <div className="flex items-center gap-3">
           <div className="p-3 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20">
             <UserCheck className="w-6 h-6" />

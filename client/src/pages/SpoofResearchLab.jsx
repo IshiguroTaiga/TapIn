@@ -76,24 +76,24 @@ export default function SpoofResearchLab() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+    <div className="w-full max-w-7xl mx-auto px-1 sm:px-4 py-4 sm:py-8 space-y-4 sm:space-y-6">
       
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2">
-            <Cpu className="w-6 h-6 text-purple-400" />
+          <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight flex items-center gap-2">
+            <Cpu className="w-5 h-5 sm:w-6 sm:h-6 text-purple-400" />
             GPS Spoofing Research Module & Evaluation Lab
           </h1>
           <p className="text-xs text-slate-400">Core thesis contribution: Standalone multi-heuristic location anomaly classifier & metrics harness.</p>
         </div>
 
         {/* Strategy Switcher */}
-        <div className="flex items-center gap-2 bg-slate-900/80 p-1.5 rounded-xl border border-slate-800 self-start md:self-auto">
+        <div className="flex items-center gap-2 bg-slate-900/80 p-1.5 rounded-xl border border-slate-800 self-start md:self-auto flex-wrap">
           <span className="text-xs font-semibold text-slate-400 px-2">Classifier Strategy:</span>
           <button
             onClick={() => setStrategy('rule-based')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`px-3 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer min-h-[40px] ${
               strategy === 'rule-based' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'
             }`}
           >
@@ -101,7 +101,7 @@ export default function SpoofResearchLab() {
           </button>
           <button
             onClick={() => setStrategy('ml-classifier')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`px-3 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer min-h-[40px] ${
               strategy === 'ml-classifier' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'
             }`}
           >

@@ -79,13 +79,13 @@ export default function SuperadminAdmins() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
+    <div className="w-full max-w-5xl mx-auto px-1 sm:px-4 py-4 sm:py-8 space-y-4 sm:space-y-6">
       
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2">
-            <Users className="w-6 h-6 text-indigo-400" />
+          <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight flex items-center gap-2">
+            <Users className="w-5 h-5 sm:w-6 sm:h-6 text-indigo-400" />
             Superadmin Account Management
           </h1>
           <p className="text-xs text-slate-400">Create, modify, and remove university administrator access credentials.</p>
@@ -93,7 +93,7 @@ export default function SuperadminAdmins() {
 
         <button
           onClick={handleOpenCreateModal}
-          className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-lg shadow-indigo-600/30 flex items-center gap-2 transition-all"
+          className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-lg shadow-indigo-600/30 flex items-center gap-2 transition-all cursor-pointer min-h-[44px] self-start sm:self-auto"
         >
           <UserPlus className="w-4 h-4" />
           <span>Add Admin Account</span>

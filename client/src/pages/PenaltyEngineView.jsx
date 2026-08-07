@@ -84,13 +84,13 @@ export default function PenaltyEngineView() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+    <div className="w-full max-w-7xl mx-auto px-1 sm:px-4 py-4 sm:py-8 space-y-4 sm:space-y-6">
       
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2">
-            <AlertTriangle className="w-6 h-6 text-amber-400" />
+          <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 sm:w-6 sm:h-6 text-amber-400" />
             Penalty & Violation Engine
           </h1>
           <p className="text-xs text-slate-400">Automated post-event evaluation engine for attendance compliance and grace period violations.</p>
@@ -98,7 +98,7 @@ export default function PenaltyEngineView() {
 
         <button
           onClick={() => setShowConfigModal(true)}
-          className="px-4 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-white flex items-center gap-2 self-start md:self-auto transition-colors"
+          className="px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-white flex items-center gap-2 self-start md:self-auto transition-colors cursor-pointer min-h-[44px]"
         >
           <Settings className="w-4 h-4 text-indigo-400" />
           <span>Configure Violation Types</span>

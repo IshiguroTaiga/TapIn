@@ -146,13 +146,13 @@ export default function EventManagement() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+    <div className="w-full max-w-7xl mx-auto px-1 sm:px-4 py-4 sm:py-8 space-y-4 sm:space-y-6">
       
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2">
-            <Calendar className="w-6 h-6 text-indigo-400" />
+          <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight flex items-center gap-2">
+            <Calendar className="w-5 h-5 sm:w-6 sm:h-6 text-indigo-400" />
             University Event Geofence Configuration
           </h1>
           <p className="text-xs text-slate-400">Manage event boundaries, scheduled time-in/out windows, and grace periods.</p>
@@ -160,7 +160,7 @@ export default function EventManagement() {
 
         <button
           onClick={handleOpenCreateModal}
-          className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-bold shadow-lg shadow-indigo-600/30 flex items-center gap-2 self-start sm:self-auto transition-all"
+          className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-bold shadow-lg shadow-indigo-600/30 flex items-center gap-2 self-start sm:self-auto transition-all cursor-pointer min-h-[44px]"
         >
           <Plus className="w-4 h-4" />
           <span>Create New Event</span>
