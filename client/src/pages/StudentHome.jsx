@@ -23,6 +23,8 @@ export default function StudentHome({ onOpenPwaNotice }) {
   const [studentError, setStudentError] = useState(null);
   
   const [activeEvent, setActiveEvent] = useState(null);
+  const [allActiveEvents, setAllActiveEvents] = useState([]);
+  const [selectedEventId, setSelectedEventId] = useState(null);
   const [eventLoading, setEventLoading] = useState(true);
 
   // Live Location & Sensors State
@@ -46,7 +48,7 @@ export default function StudentHome({ onOpenPwaNotice }) {
   const watchIdRef = useRef(null);
   const graceTimerRef = useRef(null);
 
-  // Fetch active event on load
+  // Fetch active events on load
   useEffect(() => {
     fetchActiveEvent();
   }, []);
@@ -54,10 +56,24 @@ export default function StudentHome({ onOpenPwaNotice }) {
   const fetchActiveEvent = async () => {
     setEventLoading(true);
     try {
-      const res = await axios.get('/api/events/active');
-      setActiveEvent(res.data);
+      const res = await axios.get('/api/events/active/all');
+      const eventsList = res.data || [];
+      setAllActiveEvents(eventsList);
+      
+      if (eventsList.length > 0) {
+        if (selectedEventId) {
+          const matched = eventsList.find(e => e.id === parseInt(selectedEventId));
+          setActiveEvent(matched || eventsList[0]);
+        } else {
+          setActiveEvent(eventsList[0]);
+          setSelectedEventId(eventsList[0].id);
+        }
+      } else {
+        setActiveEvent(null);
+      }
     } catch (err) {
       setActiveEvent(null);
+      setAllActiveEvents([]);
     } finally {
       setEventLoading(false);
     }
@@ -227,6 +243,7 @@ export default function StudentHome({ onOpenPwaNotice }) {
     try {
       const res = await axios.post('/api/attendance/submit', {
         student_id: studentId.trim(),
+        event_id: activeEvent?.id,
         lat: coords.lat,
         lng: coords.lng,
         accuracy,
@@ -283,6 +300,30 @@ export default function StudentHome({ onOpenPwaNotice }) {
       ) : activeEvent ? (
         <div className="glass-panel rounded-2xl p-4 sm:p-6 border border-indigo-500/30 relative overflow-hidden shadow-xl">
           <div className="absolute -top-12 -right-12 w-40 h-40 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none"></div>
+
+          {allActiveEvents.length > 1 && (
+            <div className="relative z-10 mb-3 pb-3 border-b border-slate-800/80">
+              <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">
+                Switch Event ({allActiveEvents.length} Active Events Open)
+              </label>
+              <select
+                value={activeEvent.id}
+                onChange={(e) => {
+                  const evId = parseInt(e.target.value);
+                  setSelectedEventId(evId);
+                  const selected = allActiveEvents.find(item => item.id === evId);
+                  if (selected) setActiveEvent(selected);
+                }}
+                className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs font-semibold text-white focus:outline-none focus:border-indigo-500"
+              >
+                {allActiveEvents.map(e => (
+                  <option key={e.id} value={e.id}>
+                    {e.name} (ID #{e.id})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           
           <div className="relative z-10 flex items-start justify-between gap-2">
             <div className="space-y-1">

@@ -22,8 +22,16 @@ router.post('/submit', (req, res) => {
     });
   }
 
-  // 2. Fetch Currently Active Event
-  const activeEvent = db.prepare(`SELECT * FROM events WHERE status = 'active' ORDER BY id DESC LIMIT 1`).get();
+  // 2. Fetch Active Event (Honoring event_id if provided by student event selector)
+  const { event_id } = req.body;
+  let activeEvent;
+  if (event_id) {
+    activeEvent = db.prepare(`SELECT * FROM events WHERE id = ? AND status = 'active'`).get(event_id);
+  }
+  if (!activeEvent) {
+    activeEvent = db.prepare(`SELECT * FROM events WHERE status = 'active' ORDER BY id DESC LIMIT 1`).get();
+  }
+
   if (!activeEvent) {
     return res.status(400).json({ error: 'No active university event is currently open for attendance recording.' });
   }

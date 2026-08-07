@@ -22,7 +22,7 @@ router.get('/', (req, res) => {
   res.json(events);
 });
 
-// Get active event for student view
+// Get active event for student view (single latest)
 router.get('/active', (req, res) => {
   const activeEvent = db.prepare(`
     SELECT * FROM events WHERE status = 'active' ORDER BY id DESC LIMIT 1
@@ -34,6 +34,20 @@ router.get('/active', (req, res) => {
 
   activeEvent.windows = db.prepare(`SELECT * FROM event_windows WHERE event_id = ?`).all(activeEvent.id);
   res.json(activeEvent);
+});
+
+// Get all active events for student event switching
+router.get('/active/all', (req, res) => {
+  const activeEvents = db.prepare(`
+    SELECT * FROM events WHERE status = 'active' ORDER BY id DESC
+  `).all();
+
+  const getWindows = db.prepare(`SELECT * FROM event_windows WHERE event_id = ? ORDER BY start_time ASC`);
+  activeEvents.forEach(e => {
+    e.windows = getWindows.all(e.id);
+  });
+
+  res.json(activeEvents);
 });
 
 // Get single event details
