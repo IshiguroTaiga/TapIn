@@ -33,21 +33,16 @@ function seed() {
 
   violationTypes.forEach(vt => insertViolationType.run(...vt));
 
-  // 3. Seed Master Students List
+  // 3. Seed Master Students List (Clean production state: Only Micko Gabriel D. Permison)
+  db.prepare(`DELETE FROM students WHERE student_id != '23-140015'`).run();
+
   const insertStudent = db.prepare(`
     INSERT OR REPLACE INTO students (student_id, name, year, course, college)
     VALUES (?, ?, ?, ?, ?)
   `);
 
   const sampleStudents = [
-    ['23-140015', 'Micko Gabriel D. Permison', 4, 'BS Computer Science', 'College of Computing and Information Sciences'],
-    ['23-140016', 'Maria Clara Santos', 2, 'BS Information Technology', 'College of Computing and Information Sciences'],
-    ['22-140017', 'Jose Rizal', 4, 'BS Civil Engineering', 'College of Engineering'],
-    ['24-140018', 'Andres Bonifacio', 1, 'BS Mechanical Engineering', 'College of Engineering'],
-    ['23-140019', 'Emilio Aguinaldo', 3, 'BS Business Administration', 'College of Business, Economics and Accountancy'],
-    ['23-140020', 'Gabriela Silang', 2, 'BS Nursing', 'College of Health Sciences'],
-    ['22-140021', 'Apolinario Mabini', 4, 'BS Computer Science', 'College of Computing and Information Sciences'],
-    ['24-140022', 'Melchora Aquino', 1, 'BS Accountancy', 'College of Business, Economics and Accountancy']
+    ['23-140015', 'Micko Gabriel D. Permison', 4, 'BS Computer Science', 'College of Computing and Information Sciences']
   ];
 
   sampleStudents.forEach(st => insertStudent.run(...st));

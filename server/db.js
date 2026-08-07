@@ -110,6 +110,9 @@ function initDb() {
       UPDATE events SET college_filter = 'College of Arts and Sciences' WHERE college_filter = 'Arts and Sciences';
       UPDATE events SET college_filter = 'College of Industrial Technology' WHERE college_filter = 'Industrial Technology';
       UPDATE events SET college_filter = 'College of Teacher Education' WHERE college_filter = 'Teacher Education';
+
+      -- Clean up dummy test students (keeping only Micko Gabriel D. Permison)
+      DELETE FROM students WHERE student_id NOT IN ('23-140015');
     `);
   } catch (e) {}
 }
