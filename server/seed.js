@@ -42,12 +42,12 @@ function seed() {
   const sampleStudents = [
     ['23-140015', 'Micko Gabriel D. Permison', 4, 'BS Computer Science', 'College of Computing and Information Sciences'],
     ['23-140016', 'Maria Clara Santos', 2, 'BS Information Technology', 'College of Computing and Information Sciences'],
-    ['22-140017', 'Jose Rizal', 4, 'BS Civil Engineering', 'Engineering'],
-    ['24-140018', 'Andres Bonifacio', 1, 'BS Mechanical Engineering', 'Engineering'],
-    ['23-140019', 'Emilio Aguinaldo', 3, 'BS Business Administration', 'Business, Economics & Accountancy'],
-    ['23-140020', 'Gabriela Silang', 2, 'BS Nursing', 'Health Sciences'],
+    ['22-140017', 'Jose Rizal', 4, 'BS Civil Engineering', 'College of Engineering'],
+    ['24-140018', 'Andres Bonifacio', 1, 'BS Mechanical Engineering', 'College of Engineering'],
+    ['23-140019', 'Emilio Aguinaldo', 3, 'BS Business Administration', 'College of Business, Economics and Accountancy'],
+    ['23-140020', 'Gabriela Silang', 2, 'BS Nursing', 'College of Health Sciences'],
     ['22-140021', 'Apolinario Mabini', 4, 'BS Computer Science', 'College of Computing and Information Sciences'],
-    ['24-140022', 'Melchora Aquino', 1, 'BS Accountancy', 'Business, Economics & Accountancy']
+    ['24-140022', 'Melchora Aquino', 1, 'BS Accountancy', 'College of Business, Economics and Accountancy']
   ];
 
   sampleStudents.forEach(st => insertStudent.run(...st));

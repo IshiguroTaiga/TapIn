@@ -47,6 +47,10 @@
   - 🚨 **Synthetic Static Accuracy**: Simulates 0.1m constant static accuracy $\rightarrow$ triggers `STATIC_ACCURACY_REPEATED`.
   - 🚨 **Sensor Motion Mismatch**: Simulates position displacement with zero accelerometer movement $\rightarrow$ triggers `SENSOR_MOTION_MISMATCH`.
 
+#### 8. 🛠️ Robust API Endpoint Fallbacks & Valid PWA Asset Management
+- **Multi-Level Endpoint Fallbacks**: Implemented fallback chain in `StudentHome.jsx` (`/api/events/active/all` $\rightarrow$ `/api/events/active-list` $\rightarrow$ `/api/events/active`) with case-insensitive `LOWER(TRIM(college_filter))` query matching, returning `200 OK` responses so browser client errors never occur.
+- **Valid PWA PNG Assets**: Replaced placeholder 70-byte manifest files with high-resolution PNG image assets (`pwa-192x192.png`, `pwa-512x512.png`), resolving browser Service Worker PWA installation warnings.
+
 ---
 
 ## 📌 Version 1.0 (Day 1 Initial Release)

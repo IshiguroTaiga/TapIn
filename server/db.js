@@ -94,6 +94,24 @@ function initDb() {
     CREATE INDEX IF NOT EXISTS idx_events_status ON events (status);
     CREATE INDEX IF NOT EXISTS idx_violations_event ON violations (event_id);
   `);
+
+  try {
+    db.exec(`
+      UPDATE students SET college = 'College of Engineering' WHERE college = 'Engineering';
+      UPDATE students SET college = 'College of Business, Economics and Accountancy' WHERE college LIKE '%Business%';
+      UPDATE students SET college = 'College of Health Sciences' WHERE college = 'Health Sciences';
+      UPDATE students SET college = 'College of Arts and Sciences' WHERE college = 'Arts and Sciences';
+      UPDATE students SET college = 'College of Industrial Technology' WHERE college = 'Industrial Technology';
+      UPDATE students SET college = 'College of Teacher Education' WHERE college = 'Teacher Education';
+
+      UPDATE events SET college_filter = 'College of Engineering' WHERE college_filter = 'Engineering';
+      UPDATE events SET college_filter = 'College of Business, Economics and Accountancy' WHERE college_filter LIKE '%Business%';
+      UPDATE events SET college_filter = 'College of Health Sciences' WHERE college_filter = 'Health Sciences';
+      UPDATE events SET college_filter = 'College of Arts and Sciences' WHERE college_filter = 'Arts and Sciences';
+      UPDATE events SET college_filter = 'College of Industrial Technology' WHERE college_filter = 'Industrial Technology';
+      UPDATE events SET college_filter = 'College of Teacher Education' WHERE college_filter = 'Teacher Education';
+    `);
+  } catch (e) {}
 }
 
 initDb();
