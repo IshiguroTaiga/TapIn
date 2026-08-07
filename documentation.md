@@ -182,7 +182,7 @@ $$P(\text{spoof}) = \frac{1}{1 + e^{-z}}$$
 
 ### Production Setup
 - **GitHub Repository**: [https://github.com/IshiguroTaiga/TapIn.git](https://github.com/IshiguroTaiga/TapIn.git)
-- **Deployment Platform**: Render (`https://tapin-1s8k.onrender.com`)
+- **Deployment Platform**: Render (`https://tapin-1s8k.onrender.com`), Vercel (`https://tap-in-ashen.vercel.app`)
 
 ### Environment Variables
 - `PORT`: `5000`
