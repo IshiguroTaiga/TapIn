@@ -235,13 +235,26 @@ export default function GeofenceMapPicker({
     }
   }, [centerPoint, isCustomCenter, onChangePolygon]);
 
-  // Initialize Leaflet Map
+  // Ref to hold the latest handler so map click listener never needs to be rebound or reset map
+  const onMapClickRef = useRef(null);
+  onMapClickRef.current = (newPt) => {
+    setVertices(prev => {
+      const next = [...prev, newPt];
+      updateVerticesOnly(next);
+      return next;
+    });
+  };
+
+  // Initialize Leaflet Map ONCE on mount
   useEffect(() => {
     if (!mapContainerRef.current) return;
 
     if (!mapInstanceRef.current) {
+      const initialLat = centerPoint.lat || ILOCOS_NORTE_CENTER[0];
+      const initialLng = centerPoint.lng || ILOCOS_NORTE_CENTER[1];
+
       const map = L.map(mapContainerRef.current, {
-        center: [centerPoint.lat, centerPoint.lng],
+        center: [initialLat, initialLng],
         zoom: 16,
         minZoom: 10,
         maxZoom: 19,
@@ -277,15 +290,13 @@ export default function GeofenceMapPicker({
 
       mapInstanceRef.current = map;
 
-      // Click map to append corner
+      // Click map to append corner without destroying map
       map.on('click', (e) => {
         const { lat, lng } = e.latlng;
         const newPt = [Math.round(lat * 100000) / 100000, Math.round(lng * 100000) / 100000];
-        setVertices(prev => {
-          const next = [...prev, newPt];
-          updateVerticesOnly(next);
-          return next;
-        });
+        if (onMapClickRef.current) {
+          onMapClickRef.current(newPt);
+        }
       });
     }
 
@@ -295,13 +306,13 @@ export default function GeofenceMapPicker({
         mapInstanceRef.current = null;
       }
     };
-  }, [centerPoint.lat, centerPoint.lng, updateVerticesOnly]);
+  }, []); // Mounts strictly once, zero map resets!
 
-  // Invalidate map size on expand/collapse
+  // Invalidate map size on expand/collapse without moving view
   useEffect(() => {
     if (mapInstanceRef.current) {
       setTimeout(() => {
-        mapInstanceRef.current.invalidateSize();
+        mapInstanceRef.current.invalidateSize({ pan: false });
       }, 200);
     }
   }, [isFullscreen]);
