@@ -37,11 +37,11 @@ function normalizePoint(pt) {
 function normalizePolygon(poly) {
   if (!poly) return [];
   let raw = poly;
-  if (typeof poly === 'string') {
+  while (typeof raw === 'string') {
     try {
-      raw = JSON.parse(poly);
+      raw = JSON.parse(raw);
     } catch (e) {
-      return [];
+      break;
     }
   }
 

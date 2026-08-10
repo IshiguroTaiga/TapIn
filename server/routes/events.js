@@ -32,17 +32,10 @@ function generateDefaultPolygon(centerLat, centerLng, radiusMeters = 100) {
  */
 function formatEvent(e) {
   if (!e) return null;
-  let poly = null;
-  if (e.polygon_coordinates) {
-    try {
-      poly = typeof e.polygon_coordinates === 'string' ? JSON.parse(e.polygon_coordinates) : e.polygon_coordinates;
-    } catch (err) {
-      poly = null;
-    }
-  }
+  let poly = normalizePolygon(e.polygon_coordinates);
 
   // Fallback to generated polygon if not set
-  if (!poly || !Array.isArray(poly) || poly.length < 3) {
+  if (!poly || poly.length < 3) {
     poly = generateDefaultPolygon(e.center_lat, e.center_lng, e.radius_m || 100);
   }
 

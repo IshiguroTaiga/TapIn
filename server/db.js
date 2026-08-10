@@ -125,6 +125,42 @@ function initDb() {
   try {
     db.exec(`ALTER TABLE events ADD COLUMN polygon_coordinates TEXT;`);
   } catch (e) {}
+
+  try {
+    const { normalizePolygon, calculateCentroid, calculateMaxRadius } = require('./services/geofence');
+    const eventsWithoutPoly = db.prepare(`SELECT id, center_lat, center_lng, radius_m FROM events WHERE polygon_coordinates IS NULL OR polygon_coordinates = '' OR polygon_coordinates = '[]'`).all();
+    
+    const updateStmt = db.prepare(`UPDATE events SET polygon_coordinates = ?, center_lat = ?, center_lng = ?, radius_m = ? WHERE id = ?`);
+    
+    eventsWithoutPoly.forEach(ev => {
+      const cLat = ev.center_lat || 18.1960;
+      const cLng = ev.center_lng || 120.5927;
+      const R = 6371000;
+      const rad = (ev.radius_m || 120) / 2;
+      const cosLat = Math.cos(cLat * (Math.PI / 180));
+      
+      // Default 8-vertex U-shape
+      const offsets = [
+        [-rad, -rad],
+        [+rad, -rad],
+        [+rad, +rad],
+        [+rad * 0.4, +rad],
+        [+rad * 0.4, -rad * 0.2],
+        [-rad * 0.4, -rad * 0.2],
+        [-rad * 0.4, +rad],
+        [-rad, +rad]
+      ];
+      const uShape = offsets.map(([dy, dx]) => [
+        Math.round((cLat + (dy / R) * (180 / Math.PI)) * 100000) / 100000,
+        Math.round((cLng + (dx / (R * cosLat)) * (180 / Math.PI)) * 100000) / 100000
+      ]);
+
+      const norm = normalizePolygon(uShape);
+      const centroid = calculateCentroid(norm);
+      const maxR = calculateMaxRadius(norm, centroid);
+      updateStmt.run(JSON.stringify(norm), centroid.lat, centroid.lng, maxR, ev.id);
+    });
+  } catch (e) {}
 }
 
 initDb();
