@@ -6,19 +6,11 @@ import {
   RotateCcw,
   RotateCw,
   Trash2,
-  PlusCircle,
-  CheckCircle2,
   Maximize2,
   Minimize2,
-  Compass,
-  Layers,
-  ZoomIn,
-  ZoomOut,
-  Move,
-  Target,
+  Crosshair,
   Sparkles,
-  HelpCircle,
-  Crosshair
+  HelpCircle
 } from 'lucide-react';
 
 // Ilocos Norte Geographic Bounding Constraints
@@ -27,24 +19,6 @@ const ILOCOS_NORTE_BOUNDS = [
   [17.70, 120.25], // South-West
   [18.70, 121.10]  // North-East
 ];
-
-// Campus Venue Presets
-const PRESETS = {
-  SUNKEN_GARDEN: [
-    [18.1960, 120.5920],
-    [18.1972, 120.5920],
-    [18.1972, 120.5936],
-    [18.1960, 120.5936]
-  ],
-  TEATRO_ILOCANDIA: [
-    [18.1955, 120.5915],
-    [18.1968, 120.5912],
-    [18.1975, 120.5925],
-    [18.1970, 120.5940],
-    [18.1958, 120.5938],
-    [18.1950, 120.5926]
-  ]
-};
 
 function calculateGeometricCentroid(points) {
   if (!points || points.length === 0) return { lat: 18.1960, lng: 120.5927 };
@@ -79,19 +53,19 @@ function calculateMaxRadiusFromCenter(points, center) {
   return Math.max(30, Math.ceil(maxDist));
 }
 
-// Generate Shape Footprint Templates centered on map
+// Generate Shape Footprint Templates centered on given coordinate
 function generateLShapeAround(centerLat, centerLng, spanM = 120) {
   const R = 6371000;
   const rad = spanM / 2;
   const cosLat = Math.cos(centerLat * (Math.PI / 180));
   
   const offsets = [
-    [-rad, -rad],       // Bottom-left
-    [+rad, -rad],       // Bottom-right
-    [+rad, 0],          // Right elbow
-    [0, 0],             // Inner corner
-    [0, +rad],          // Top inner
-    [-rad, +rad]        // Top-left
+    [-rad, -rad],
+    [+rad, -rad],
+    [+rad, 0],
+    [0, 0],
+    [0, +rad],
+    [-rad, +rad]
   ];
 
   return offsets.map(([dy, dx]) => {
@@ -170,72 +144,88 @@ export default function GeofenceMapPicker({
   const midpointMarkersGroupRef = useRef(null);
   const centroidMarkerRef = useRef(null);
 
+  // Track if updates originated locally to prevent prop reflection loops
+  const lastEmittedHashRef = useRef('');
+
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
-  const [dragMode, setDragMode] = useState('center_only'); // 'center_only' (moves center pin independently) | 'entire_shape' (translates all vertices)
+  const [dragMode, setDragMode] = useState('center_only'); // 'center_only' | 'entire_shape'
   const [isCustomCenter, setIsCustomCenter] = useState(Boolean(centerLat && centerLng));
 
   // Local polygon state
   const [vertices, setVertices] = useState(() => {
     if (Array.isArray(polygon) && polygon.length >= 3) {
-      return polygon.map(p => Array.isArray(p) ? [p[0], p[1]] : [p.lat, p.lng]);
+      return polygon.map(p => Array.isArray(p) ? [parseFloat(p[0]), parseFloat(p[1])] : [parseFloat(p.lat), parseFloat(p.lng)]);
     }
-    const cLat = centerLat || ILOCOS_NORTE_CENTER[0];
-    const cLng = centerLng || ILOCOS_NORTE_CENTER[1];
+    const cLat = centerLat ? parseFloat(centerLat) : ILOCOS_NORTE_CENTER[0];
+    const cLng = centerLng ? parseFloat(centerLng) : ILOCOS_NORTE_CENTER[1];
     return generateHexagonAround(cLat, cLng, radiusMeters || 120);
   });
 
-  // Local custom center point state (Main Stage / Hub Pin)
+  // Local center point state
   const [centerPoint, setCenterPoint] = useState(() => {
     if (centerLat && centerLng) {
       return { lat: parseFloat(centerLat), lng: parseFloat(centerLng) };
     }
     if (Array.isArray(polygon) && polygon.length >= 3) {
-      return calculateGeometricCentroid(polygon.map(p => Array.isArray(p) ? [p[0], p[1]] : [p.lat, p.lng]));
+      const normalized = polygon.map(p => Array.isArray(p) ? [parseFloat(p[0]), parseFloat(p[1])] : [parseFloat(p.lat), parseFloat(p.lng)]);
+      return calculateGeometricCentroid(normalized);
     }
     return { lat: ILOCOS_NORTE_CENTER[0], lng: ILOCOS_NORTE_CENTER[1] };
   });
 
-  // Keep center point synced if prop changes externally
+  // Keep internal center in sync if prop changes externally (e.g. initial edit load)
   useEffect(() => {
     if (centerLat && centerLng) {
-      setCenterPoint({ lat: parseFloat(centerLat), lng: parseFloat(centerLng) });
+      const c = { lat: parseFloat(centerLat), lng: parseFloat(centerLng) };
+      const hash = JSON.stringify({ c });
+      if (lastEmittedHashRef.current !== hash) {
+        setCenterPoint(c);
+      }
     }
   }, [centerLat, centerLng]);
 
-  // Sync external polygon prop updates
+  // Sync external polygon prop updates ONLY if external
   useEffect(() => {
     if (Array.isArray(polygon) && polygon.length >= 3) {
-      const normalized = polygon.map(p => Array.isArray(p) ? [p[0], p[1]] : [p.lat, p.lng]);
-      setVertices(normalized);
+      const normalized = polygon.map(p => Array.isArray(p) ? [parseFloat(p[0]), parseFloat(p[1])] : [parseFloat(p.lat), parseFloat(p.lng)]);
+      const hash = JSON.stringify(normalized);
+      if (lastEmittedHashRef.current !== hash) {
+        setVertices(normalized);
+      }
     }
   }, [polygon]);
 
-  // Central update notifier
-  const notifyChanges = useCallback((newVertices, newCenter) => {
+  // Emit changes to parent safely with hash recording
+  const emitChanges = useCallback((newVertices, newCenter) => {
     setVertices(newVertices);
     setCenterPoint(newCenter);
+    lastEmittedHashRef.current = JSON.stringify(newVertices);
+
     if (onChangePolygon) {
       const maxRadius = calculateMaxRadiusFromCenter(newVertices, newCenter);
       onChangePolygon(newVertices, newCenter, maxRadius);
     }
   }, [onChangePolygon]);
 
-  // When vertices change (e.g. corner moved), honor the custom center if set
+  // Update vertices while preserving custom center point
   const updateVerticesOnly = useCallback((newVertices) => {
     setVertices(newVertices);
+    lastEmittedHashRef.current = JSON.stringify(newVertices);
+
     let effectiveCenter = centerPoint;
     if (!isCustomCenter) {
       effectiveCenter = calculateGeometricCentroid(newVertices);
       setCenterPoint(effectiveCenter);
     }
+
     if (onChangePolygon) {
       const maxRadius = calculateMaxRadiusFromCenter(newVertices, effectiveCenter);
       onChangePolygon(newVertices, effectiveCenter, maxRadius);
     }
   }, [centerPoint, isCustomCenter, onChangePolygon]);
 
-  // Ref to hold the latest handler so map click listener never needs to be rebound or reset map
+  // Mutable refs for click handlers so map never re-attaches
   const onMapClickRef = useRef(null);
   onMapClickRef.current = (newPt) => {
     setVertices(prev => {
@@ -245,7 +235,7 @@ export default function GeofenceMapPicker({
     });
   };
 
-  // Initialize Leaflet Map ONCE on mount
+  // 1. Initialize Leaflet Map ONCE on component mount
   useEffect(() => {
     if (!mapContainerRef.current) return;
 
@@ -290,7 +280,7 @@ export default function GeofenceMapPicker({
 
       mapInstanceRef.current = map;
 
-      // Click map to append corner without destroying map
+      // Click to add vertex (preserves map viewport completely)
       map.on('click', (e) => {
         const { lat, lng } = e.latlng;
         const newPt = [Math.round(lat * 100000) / 100000, Math.round(lng * 100000) / 100000];
@@ -306,18 +296,18 @@ export default function GeofenceMapPicker({
         mapInstanceRef.current = null;
       }
     };
-  }, []); // Mounts strictly once, zero map resets!
+  }, []); // Strictly empty dependency array
 
-  // Invalidate map size on expand/collapse without moving view
+  // 2. Invalidate Map Size without moving camera
   useEffect(() => {
     if (mapInstanceRef.current) {
       setTimeout(() => {
         mapInstanceRef.current.invalidateSize({ pan: false });
-      }, 200);
+      }, 150);
     }
   }, [isFullscreen]);
 
-  // Synchronize Leaflet Layers & Handles
+  // 3. Render and Update Layers & Markers (Zero camera manipulation)
   useEffect(() => {
     if (!mapInstanceRef.current || !vertexMarkersGroupRef.current) return;
 
@@ -331,7 +321,7 @@ export default function GeofenceMapPicker({
       polygonLayerRef.current.setLatLngs(vertices);
       polylineLayerRef.current.setLatLngs([]);
 
-      // 1. Dedicated Draggable Center Pin (Amber/Gold Star)
+      // Dedicated Draggable Center Pin (Gold Star)
       const centroidIcon = L.divIcon({
         className: 'centroid-pin',
         html: `<div style="
@@ -348,6 +338,7 @@ export default function GeofenceMapPicker({
           color: white;
           font-weight: bold;
           font-size: 14px;
+          user-select: none;
           touch-action: none;
         ">★</div>`,
         iconSize: [34, 34],
@@ -356,6 +347,7 @@ export default function GeofenceMapPicker({
 
       const centerMarker = L.marker([centerPoint.lat, centerPoint.lng], {
         draggable: true,
+        autoPan: false, // Prevents map viewport from jumping while dragging!
         icon: centroidIcon
       });
 
@@ -365,8 +357,8 @@ export default function GeofenceMapPicker({
           <span style="font-family: monospace; font-size: 11px; color: #cbd5e1;">${centerPoint.lat.toFixed(5)}, ${centerPoint.lng.toFixed(5)}</span><br/>
           <div style="margin-top: 4px; color: #94a3b8; font-size: 11px;">
             ${dragMode === 'center_only' 
-              ? '✨ <b>Mode:</b> Dragging relocates <u>center point only</u> (stage/entrance).'
-              : '📦 <b>Mode:</b> Dragging moves the <u>entire building footprint</u>.'}
+              ? '✨ <b>Mode:</b> Moves <u>center point only</u> (stage/entrance).'
+              : '📦 <b>Mode:</b> Moves <u>entire building footprint</u>.'}
           </div>
         </div>
       `);
@@ -375,6 +367,8 @@ export default function GeofenceMapPicker({
       let initialVerticesOnDrag = null;
 
       centerMarker.on('dragstart', (e) => {
+        // Freeze map dragging so mobile finger drag doesn't move the map
+        if (mapInstanceRef.current) mapInstanceRef.current.dragging.disable();
         dragStartCenter = e.target.getLatLng();
         initialVerticesOnDrag = [...vertices];
       });
@@ -397,6 +391,9 @@ export default function GeofenceMapPicker({
       });
 
       centerMarker.on('dragend', (e) => {
+        // Re-enable map dragging
+        if (mapInstanceRef.current) mapInstanceRef.current.dragging.enable();
+
         const newPos = e.target.getLatLng();
         const newCenter = {
           lat: Math.round(newPos.lat * 100000) / 100000,
@@ -412,10 +409,9 @@ export default function GeofenceMapPicker({
             Math.round((lat + dLat) * 100000) / 100000,
             Math.round((lng + dLng) * 100000) / 100000
           ]);
-          notifyChanges(shifted, newCenter);
+          emitChanges(shifted, newCenter);
         } else {
-          // Relocate Center Pin independently without moving polygon boundaries
-          notifyChanges(vertices, newCenter);
+          emitChanges(vertices, newCenter);
         }
 
         dragStartCenter = null;
@@ -424,7 +420,7 @@ export default function GeofenceMapPicker({
 
       centroidMarkerRef.current.addLayer(centerMarker);
 
-      // 2. Midpoint '+' Handles (split edges)
+      // Midpoint '+' Handles (Click or drag to split walls)
       for (let i = 0; i < n; i++) {
         const j = (i + 1) % n;
         const [lat1, lng1] = vertices[i];
@@ -448,6 +444,7 @@ export default function GeofenceMapPicker({
             color: white;
             font-weight: bold;
             font-size: 11px;
+            user-select: none;
             touch-action: none;
           ">+</div>`,
           iconSize: [20, 20],
@@ -456,15 +453,13 @@ export default function GeofenceMapPicker({
 
         const midMarker = L.marker([midLat, midLng], {
           draggable: true,
+          autoPan: false,
           icon: midIcon
         });
 
-        midMarker.bindPopup(`
-          <div style="font-size: 11px;">
-            <b>Insert Corner Point</b><br/>
-            Click or drag to split this wall.
-          </div>
-        `);
+        midMarker.on('dragstart', () => {
+          if (mapInstanceRef.current) mapInstanceRef.current.dragging.disable();
+        });
 
         midMarker.on('click', () => {
           const insertPt = [Math.round(midLat * 100000) / 100000, Math.round(midLng * 100000) / 100000];
@@ -474,6 +469,7 @@ export default function GeofenceMapPicker({
         });
 
         midMarker.on('dragend', (e) => {
+          if (mapInstanceRef.current) mapInstanceRef.current.dragging.enable();
           const newPos = e.target.getLatLng();
           const insertPt = [Math.round(newPos.lat * 100000) / 100000, Math.round(newPos.lng * 100000) / 100000];
           const next = [...vertices];
@@ -492,7 +488,7 @@ export default function GeofenceMapPicker({
       polylineLayerRef.current.setLatLngs([]);
     }
 
-    // 3. Touch-Friendly Corner Handles (#1, #2, #3...)
+    // Touch-Friendly Corner Handles (#1, #2, #3...)
     vertices.forEach(([lat, lng], idx) => {
       const vertexIcon = L.divIcon({
         className: 'vertex-handle',
@@ -510,6 +506,7 @@ export default function GeofenceMapPicker({
           color: white;
           font-weight: bold;
           font-size: 12px;
+          user-select: none;
           touch-action: none;
         ">${idx + 1}</div>`,
         iconSize: [30, 30],
@@ -518,8 +515,8 @@ export default function GeofenceMapPicker({
 
       const marker = L.marker([lat, lng], {
         draggable: true,
-        icon: vertexIcon,
-        autoPan: true
+        autoPan: false, // Prevents camera jumps while dragging near edges
+        icon: vertexIcon
       });
 
       const popupContent = document.createElement('div');
@@ -556,6 +553,10 @@ export default function GeofenceMapPicker({
         }
       });
 
+      marker.on('dragstart', () => {
+        if (mapInstanceRef.current) mapInstanceRef.current.dragging.disable();
+      });
+
       marker.on('drag', (e) => {
         const newPos = e.target.getLatLng();
         const updated = [...vertices];
@@ -569,6 +570,8 @@ export default function GeofenceMapPicker({
       });
 
       marker.on('dragend', (e) => {
+        if (mapInstanceRef.current) mapInstanceRef.current.dragging.enable();
+
         const newPos = e.target.getLatLng();
         const updated = [...vertices];
         updated[idx] = [
@@ -580,14 +583,14 @@ export default function GeofenceMapPicker({
 
       vertexMarkersGroupRef.current.addLayer(marker);
     });
-  }, [vertices, centerPoint, dragMode, isCustomCenter, notifyChanges, updateVerticesOnly]);
+  }, [vertices, centerPoint, dragMode, isCustomCenter, emitChanges, updateVerticesOnly]);
 
   // Snap Center Pin back to exact geometric middle
   const handleSnapToGeometricCentroid = () => {
     if (vertices.length < 3) return;
     const geomCenter = calculateGeometricCentroid(vertices);
     setIsCustomCenter(false);
-    notifyChanges(vertices, geomCenter);
+    emitChanges(vertices, geomCenter);
   };
 
   // Transform Actions: Scale
@@ -598,7 +601,7 @@ export default function GeofenceMapPicker({
       Math.round((center.lat + factor * (lat - center.lat)) * 100000) / 100000,
       Math.round((center.lng + factor * (lng - center.lng)) * 100000) / 100000
     ]);
-    notifyChanges(scaled, center);
+    emitChanges(scaled, center);
   };
 
   // Transform Actions: Rotate (15 degrees)
@@ -618,48 +621,36 @@ export default function GeofenceMapPicker({
         Math.round((center.lng + dxRot / cosLat) * 100000) / 100000
       ];
     });
-    notifyChanges(rotated, center);
+    emitChanges(rotated, center);
   };
 
-  // Footprint Builders
+  // Footprint Builders (Centers smoothly without breaking camera)
   const handleSpawnLShape = () => {
     const center = centerPoint;
     const lShape = generateLShapeAround(center.lat, center.lng, radiusMeters || 120);
-    notifyChanges(lShape, center);
-    if (mapInstanceRef.current) {
-      mapInstanceRef.current.fitBounds(L.latLngBounds(lShape).pad(0.3));
-    }
+    emitChanges(lShape, center);
   };
 
   const handleSpawnUShape = () => {
     const center = centerPoint;
     const uShape = generateUShapeAround(center.lat, center.lng, radiusMeters || 120);
-    notifyChanges(uShape, center);
-    if (mapInstanceRef.current) {
-      mapInstanceRef.current.fitBounds(L.latLngBounds(uShape).pad(0.3));
-    }
+    emitChanges(uShape, center);
   };
 
   const handleSpawnBox = () => {
     const center = centerPoint;
     const box = generateBoxAround(center.lat, center.lng, radiusMeters || 100);
-    notifyChanges(box, center);
-    if (mapInstanceRef.current) {
-      mapInstanceRef.current.fitBounds(L.latLngBounds(box).pad(0.3));
-    }
+    emitChanges(box, center);
   };
 
   const handleSpawnHexagon = () => {
     const center = centerPoint;
     const hex = generateHexagonAround(center.lat, center.lng, radiusMeters || 100);
-    notifyChanges(hex, center);
-    if (mapInstanceRef.current) {
-      mapInstanceRef.current.fitBounds(L.latLngBounds(hex).pad(0.3));
-    }
+    emitChanges(hex, center);
   };
 
   const handleClearPolygon = () => {
-    notifyChanges([], centerPoint);
+    emitChanges([], centerPoint);
   };
 
   const handlePickCurrentLocation = () => {
@@ -675,12 +666,12 @@ export default function GeofenceMapPicker({
         const newCenter = { lat, lng };
 
         if (mapInstanceRef.current) {
-          mapInstanceRef.current.setView([lat, lng], 17);
+          mapInstanceRef.current.flyTo([lat, lng], 17);
         }
 
         const lShape = generateLShapeAround(lat, lng, radiusMeters || 100);
         setIsCustomCenter(true);
-        notifyChanges(lShape, newCenter);
+        emitChanges(lShape, newCenter);
       },
       (err) => {
         alert('Could not retrieve current location: ' + err.message);
@@ -712,7 +703,6 @@ export default function GeofenceMapPicker({
         {/* Global Controls */}
         <div className="flex items-center gap-1.5 flex-wrap">
           
-          {/* Snap to Middle Button */}
           <button
             type="button"
             onClick={handleSnapToGeometricCentroid}
@@ -903,7 +893,7 @@ export default function GeofenceMapPicker({
         {/* Floating Tip Overlay */}
         <div className="absolute bottom-2 left-2 z-20 glass-panel px-2.5 py-1 rounded-lg border border-slate-700/80 text-[10px] text-slate-300 backdrop-blur-md flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-          <span>Gold Star (★) is Center Pin • Drag to position stage/hub</span>
+          <span>Gold Star (★) is Center Pin • Drag corners to reshape</span>
         </div>
       </div>
 
