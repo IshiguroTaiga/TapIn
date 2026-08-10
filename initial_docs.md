@@ -1,182 +1,162 @@
-# 📄 TapIn: Point-in-Polygon Geofence-Based Attendance Monitoring System with Real-Time Analytics
-## Comprehensive Research Documentation, Slide Deck Alignment & Defense Guide
+# 📄 TAPIN: THESIS PROPOSAL MANUSCRIPT
+## Official Capstone & Thesis Proposal Form (Print-Ready Version)
 
 ---
 
-## 📌 Executive Alignment Summary
-
-> **Yes! Your recap matches what we have built in the codebase with 100% fidelity.**  
-> Below is the updated breakdown that harmonizes your presentation content with the **Version 3.0 (Day 3)** Ray-Casting Point-in-Polygon implementation, multi-tier pre-filtering, and research anti-spoofing module.
+### **TITLE**
+**TapIn: Point-in-Polygon Geofence-Based Attendance Monitoring System with Real-Time Analytics**
 
 ---
 
-## 🎯 1. Motivation
-### *What Drives This Research?*
+### **DESCRIPTION**
+**TapIn** is a web-based, mobile-responsive Progressive Web Application (PWA) that leverages device GPS telemetry and an interactive **Ray-Casting Point-in-Polygon (PIP) geofencing engine** to verify a student's authentic physical presence at mandatory university events. 
 
-This study is driven by the disconnection between how attendance is currently taken at MMSU-mandated events and how modern institutions already verify presence. The goal is to replace slow, manual, tedious methods with a fast, GPS-verified alternative.
+Students record attendance seamlessly through a 3-step zero-friction workflow: access the portal, allow browser geolocation access, and enter their Student ID—requiring **no bottleneck queues, no barcode scanning hardware, and no student account registration**. 
 
-* **The Real-World Catalyst**: On-the-Job Training (OJT) observations at the **Provincial Government of Ilocos Norte (PGIN)** showed personnel clocking in/out via geofenced mobile verification instantly, while student interns still queued in long lines for barcode scanners.
-* **DOST Region 1 Experience**: This contrast was sharpened further by observing **DOST Region 1’s** traceable digital systems, raising the core thesis question:
-  > *"What if university event attendance didn't require standing in long queues, scanning ID barcodes, typing numbers on a shared laptop, or writing on paper sheets at all?"*
+The platform automatically sanitizes and formats the Student ID, cross-references identity against official university master records, and intelligently determines whether `TIME_IN` or `TIME_OUT` applies. Administrators and Superadministrators utilize a centralized command dashboard to configure custom venue polygon boundaries on interactive campus maps, monitor live telemetry streams via WebSockets (Socket.io), and enforce continuous event compliance through an automated post-event penalty engine.
 
 ---
 
-## 🔍 2. Research Gap
-### *Why Existing Methods Fail*
+### **PROBLEM STATEMENT**
+Mandatory university-wide assemblies, college convocations, institutional seminars, and academic events currently rely on manual attendance methods—such as students queuing to write their credentials on paper sign-in sheets, typing their ID on shared laptops, or scanning physical ID barcodes. This traditional paradigm suffers from four critical institutional vulnerabilities:
 
-| Existing Method | Mechanism | Critical Limitations |
-| :--- | :--- | :--- |
-| **Paper Sign-in Sheets & Verbal Roll Call** | Physical handwriting | Easily lost, damaged, illegible, or forged. Zero real-time data. |
-| **Barcode / QR ID Presentation** | Scanned at entry table | Confirms identity at one moment; does **not** verify continued presence throughout the event. Causes long bottlenecks at doors. |
-| **Shared Laptops (Typing Student ID)** | Manual entry into Google Forms / Excel | Vulnerable to **"Buddy Punching"** (students typing friends' IDs) unless human proctors constantly monitor inputs. |
-| **PWA Attendance Systems** *(e.g., Deviana et al., 2021)* | Web check-in | Tracks timestamp/location but lacks verification of whether the GPS coordinate is authentic or spoofed. |
-| **Generic Spoof Detectors** *(e.g., Campos et al., 2020)* | High-level telemetry filters | Generic algorithms designed for autonomous drones/vehicles, not optimized for low-power mobile web browser contexts or campus event geofencing. |
-
-### 💡 The TapIn Research Gap:
-> **No existing system today combines continuous, irregularly shaped polygon geofencing with specialized multi-sensor location spoofing detection for university event attendance.**
+1. **Queue Bottlenecks & Operational Inefficiency**: Hundreds of attendees crowding at entrance doorways creates severe congestion, delays event commencement, and ties down faculty proctors to manual data entry.
+2. **Vulnerability to Proxy Signing ("Buddy Punching")**: Paper sheets, barcode screenshots, and unmonitored Google Forms allow present students to easily record attendance on behalf of absent peers without physical verification.
+3. **Absence of Continuous Presence Verification**: Current checkpoints record presence at only one instant; students routinely log `TIME_IN`, depart the venue immediately to go off-campus, and return hours later solely to log `TIME_OUT`, artificially inflating attendance figures.
+4. **Susceptibility to Location Spoofing**: Standard, unhardened web geolocation implementations can be trivially bypassed using third-party Mock GPS and location-spoofing applications.
 
 ---
 
-## ⚠️ 3. The Core Problem Statement
+### **OBJECTIVES**
+The general objective of this research is to design, develop, and evaluate **TapIn**, a unified mobile-responsive academic attendance verification platform that:
 
-At mandatory university assemblies, general convocations, and collegiate events, students must queue at entrance bottleneck tables to type their ID, scan barcodes, or sign paper sheets. This creates **four critical vulnerabilities**:
-
-1. **No Reliable Digital Traceability**: Paper sheets get lost or forged; manual log sheets take hours/days to digitize and tally.
-2. **Zero Continuous Presence Verification**: A student can scan their ID at 8:00 AM, immediately leave the campus to hang out at a cafe, and return at 4:30 PM just to scan out.
-3. **Pervasive Buddy Punching**: Absent students ask friends to type their Student ID or scan their barcode screenshot.
-4. **Lack of Real-Time Visibility**: Organizers cannot see live venue occupancy, crowd distribution, or attrition rates until after the event is finished.
-
----
-
-## 💡 4. Proposed Solution & Core Computing Contributions
-
-TapIn is a **Progressive Web Application (PWA)** that verifies students' physical presence using their personal mobile devices without requiring logins, account creation, or invasive selfie biometrics.
-
-### 🏛️ Core Computing Contributions:
-
-#### A. 📐 Geofencing: Ray-Casting Point-in-Polygon (PIP) Algorithm
-* **Why Not Circles?**: Standard circular Haversine geofences fail in real campuses because university buildings, quadrangles, and athletic grandstands are rectangular, L-shaped, or irregular. Circles either spill over into adjacent streets (false positives) or chop off building wings (false negatives).
-* **The Algorithm (Jordan Curve Theorem)**:
-  * Casts an eastward horizontal ray from the student's coordinates $(lat, lng)$ to $(+\infty, lat)$.
-  * Counts the parity of intersections with the venue's polygon edges:
-    $$\text{Inside Venue} \iff (\text{Edge Crossings} \bmod 2 \equiv 1)$$
-  * Collinear points and vertex boundaries are automatically handled.
-* **Multi-Tier Fast Pre-filter Optimization**:
-  1. *Haversine Bounding Sphere*: Rejects distant coordinates ($> R_{\max} + \text{margin}$) in $O(1)$ spherical time.
-  2. *Axis-Aligned Bounding Box (AABB)*: Filters out points outside $[\min Lat, \max Lat] \times [\min Lng, \max Lng]$.
-  3. *Ray-Casting*: Executes exact edge parity test only on coordinates passing the pre-filters.
-* **Testing Status**: **Fully Implemented and 100% Tested** (15 automated unit tests passing in `server/scripts/testGeofence.js`).
+1. **Eliminates Manual Queues**: Provides a streamlined 3-step verification workflow (Portal Access $\rightarrow$ GPS Permission $\rightarrow$ Student ID Entry) with automatic identity validation against university master student records.
+2. **Ensures Authentic Physical Presence**: Validates real-time student coordinates against irregular, custom-shaped venue boundaries using the **Jordan Curve Ray-Casting Point-in-Polygon (PIP)** algorithm, optimized with a fast Haversine bounding sphere pre-filter.
+3. **Enforces Continuous Duration Compliance**: Monitors attendee dwell time through an automated **Grace Period Engine** featuring live countdown timers and automatic reset triggers upon boundary re-entry.
+4. **Automates Violation Assessment**: Evaluates post-event compliance through a rule-based **Penalty Engine** that flags specific infractions (e.g., unauthorized early departure, unrecorded time-out, or geofence boundary expiration) tailored to collegiate policy requirements.
+5. **Empowers Administrators with Real-Time Analytics**: Delivers live attendance feeds, occupancy rates, and multi-college filtered data streams powered by Socket.io WebSocket architecture.
+6. **Hardens System Security Against Mock Locations**: Employs a decoupled **GPS Spoofing-Detection Research Module** evaluating multi-sensor heuristics (velocity plausibility, static precision patterns, timestamp cadences, and accelerometer motion correlation) and a Machine Learning Logistic Regression classifier.
 
 ---
 
-#### B. 🛡️ GPS Spoofing Detection Module
-*Built as a decoupled, swappable service with two distinct strategies evaluated side-by-side:*
+### **METHODOLOGY & TECHNICAL MODULES**
+This study follows an **Agile Development Methodology**, structured across six iterative technical modules:
 
 ```
-                              Student Device Telemetry
-                       (Coords, Accuracy, Timestamp, Motion)
-                                        │
-                                        ▼
-                         ┌─────────────────────────────┐
-                         │   SpoofDetector (Facade)    │
-                         └──────────────┬──────────────┘
-                                        │
-                 ┌──────────────────────┴──────────────────────┐
-                 ▼                                             ▼
-     ┌───────────────────────┐                     ┌───────────────────────┐
-     │ Strategy A:           │                     │ Strategy B:           │
-     │ Rule-Based Heuristics │                     │ Machine Learning (ML) │
-     │ (Multi-Sensor Scoring)│                     │ (Logistic Regression) │
-     └───────────────────────┘                     └───────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                           TAPIN SYSTEM MODULES                           │
+├────────────────────────────────┬─────────────────────────────────────────┤
+│ 1. Point-in-Polygon Geofencing │ Jordan Curve Ray-Casting PIP algorithm  │
+│    & Spatial Radar Engine      │ with O(1) Haversine sphere pre-filter.  │
+├────────────────────────────────┼─────────────────────────────────────────┤
+│ 2. Interactive Venue & Event   │ Interactive Leaflet polygon canvas with │
+│    Boundary Configuration      │ draggable vertices and MMSU presets.    │
+├────────────────────────────────┼─────────────────────────────────────────┤
+│ 3. Grace Period & Compliance   │ 15-minute countdown buffer for boundary │
+│    State Machine Engine        │ exits with automatic re-entry resets.   │
+├────────────────────────────────┼─────────────────────────────────────────┤
+│ 4. Automated Penalty Engine    │ Policy-driven classification tagging    │
+│                                │ Compliant vs. With Penalty records.     │
+├────────────────────────────────┼─────────────────────────────────────────┤
+│ 5. Real-Time Telemetry Feed    │ Socket.io bidirectional WebSocket hub   │
+│    & Command Dashboard         │ streaming live in-range & spoof alerts. │
+├────────────────────────────────┼─────────────────────────────────────────┤
+│ 6. Anti-Spoofing Heuristics &  │ Rule-based multi-sensor scoring and ML  │
+│    Research Evaluation Harness │ Logistic Regression classifier CLI tool.│
+└────────────────────────────────┴─────────────────────────────────────────┘
 ```
 
-##### 🌟 Plain-English Explanation of the 4 Heuristic Checks:
-1. **The Physics / Speed Check (`IMPLAUSIBLE_SPEED`)**:
-   * *Concept*: Humans cannot teleport. If consecutive reports show a speed $> 15\text{ m/s}$ ($54\text{ km/h}$) inside a campus walking zone, or a 5km jump in 1 second, it's flagged as an instant Mock GPS teleport.
-2. **The Precision Pattern Check (`STATIC_ACCURACY_REPEATED`)**:
-   * *Concept*: Authentic GPS accuracy naturally fluctuates ($\pm 8\text{m} \rightarrow \pm 11\text{m} \rightarrow \pm 9\text{m}$) due to atmospheric noise. Fake GPS apps often inject constant static values (e.g. exactly `5.000m` or unrealistic `0.1m`).
-3. **The Clock Cadence Check (`TIMESTAMP_OUT_OF_ORDER`)**:
-   * *Concept*: Automated scripts send timestamps out of order or at unnatural integer cadences ($1,000\text{ ms}$ tick intervals).
-4. **The Sensor-Movement Mismatch Check (`SENSOR_MOTION_MISMATCH`)**:
-   * *Concept*: If GPS telemetry reports displacement ($> 3\text{ m/s}$), but the phone's physical hardware accelerometer reports zero movement ($|\sqrt{x^2+y^2+z^2} - 9.81| \approx 0$), the user is spoofing coordinates from a stationary desk.
-
-##### 🤖 Strategy B: Machine Learning Logistic Regression
-* Converts the multi-sensor signals into a feature vector $(f_{\text{speed}}, f_{\text{accLow}}, f_{\text{staticAcc}}, f_{\text{time}}, f_{\text{motion}})$ and calculates:
-  $$P(\text{spoof}) = \frac{1}{1 + e^{-z}}$$
-* Flags submissions if $P(\text{spoof}) \ge 0.50$, outputting a trust score from $0$ to $100$.
+#### Detailed Module Breakdown:
+1. **Point-in-Polygon Geofencing & Spatial Radar Engine**: Casts a horizontal ray from student coordinates to evaluate boundary containment parity against ordered polygon vertices ($N \ge 3$), eliminating false positives/negatives inherent in circular radius models.
+2. **Event & Schedule Configuration Module**: Enables administrators to draw custom venue shapes (e.g. L-shaped buildings, quadrangles), assign targeted college/course/year filters, and configure multi-window scheduling (`TIME_IN` and `TIME_OUT`).
+3. **Grace Period State Machine**: Manages a 15-minute tolerance timer when students step outside venue boundaries, resetting upon timely re-entry and tagging expired records as `Borderline` without hard-locking time-out capability.
+4. **Penalty Evaluation Engine**: Evaluates completed attendance logs against configurable infraction rules (insufficient duration, missed windows, geofence non-compliance) to generate institutional clearance reports.
+5. **Real-Time Monitoring Dashboard**: Streams live telemetry via Socket.io, displaying instant metrics for in-range attendees, active grace countdowns, and flagged anomalies.
+6. **Anti-Spoofing Research Module & Evaluation Harness**: Evaluates 4 multi-sensor heuristic checks (`IMPLAUSIBLE_SPEED`, `STATIC_ACCURACY_REPEATED`, `TIMESTAMP_OUT_OF_ORDER`, `SENSOR_MOTION_MISMATCH`) alongside a Logistic Regression classifier, verified against labeled benchmark datasets via a CLI evaluation tool reporting Accuracy, Precision, Recall, Specificity, FPR, and F1 Score.
 
 ---
 
-#### C. 📊 Academic Evaluation Methodology
-* Built an automated command-line harness (`server/scripts/evalSpoofDetector.js`) that ingests labeled test datasets (`sample_traces.csv`) and computes standard research metrics:
-  * **Accuracy**
-  * **Precision**
-  * **Recall (Sensitivity)**
-  * **Specificity (True Negative Rate)**
-  * **False Positive Rate (FPR)**
-  * **F1 Score**
-* Executable via: `npm run eval:rule` and `npm run eval:ml`.
+### **PROJECT TIMELINE**
+
+| Phase | Milestone / Activity | Duration |
+| :--- | :--- | :---: |
+| **Phase 1** | Literature Review & Theoretical Formulation | 2 Weeks |
+| **Phase 2** | Requirement Analysis & Master Data Gathering | 2 Weeks |
+| **Phase 3** | System Architecture & Database Schema Design | 2 Weeks |
+| **Phase 4** | Full-Stack System Development & Module Integration | 4 Weeks |
+| **Phase 5** | System Verification, Spoofing Harness Testing & Field Trials | 2 Weeks |
+| **Phase 6** | Documentation, Manuscript Finalization & Defense Preparation | 4 Weeks |
+| **Total** | **End-to-End Capstone Lifecycle** | **16 Weeks** |
 
 ---
 
-## 🎯 5. Research Thrust & SDG Alignment
-
-```
-   ┌─────────────────────────────────────────────────────────────┐
-   │                       RESEARCH THRUSTS                      │
-   ├──────────────────────────────┬──────────────────────────────┤
-   │ 1. Information Systems &     │ Enterprise full-stack PWA,   │
-   │    Software Development      │ SQLite WAL, Socket.io feed.  │
-   ├──────────────────────────────┼──────────────────────────────┤
-   │ 2. Digital Transformation &  │ Paperless student workflow,  │
-   │    Smart Campus Technologies │ zero-queue presence check.   │
-   ├──────────────────────────────┼──────────────────────────────┤
-   │ 3. Geographic Information    │ Ray-Casting PIP, Multi-tier  │
-   │    Systems & LBS             │ Haversine pre-filter engine. │
-   └──────────────────────────────┴──────────────────────────────┘
-
-   ┌─────────────────────────────────────────────────────────────┐
-   │                        SDG ALIGNMENT                        │
-   ├──────────────────────────────┬──────────────────────────────┤
-   │ SDG 4: Quality Education     │ Promotes student attendance  │
-   │                              │ integrity and transparency.  │
-   ├──────────────────────────────┼──────────────────────────────┤
-   │ SDG 9: Industry, Innovation, │ Digital smart-campus infra-  │
-   │        & Infrastructure      │ structure for universities.  │
-   ├──────────────────────────────┼──────────────────────────────┤
-   │ SDG 11: Sustainable Cities & │ Paperless green operations,  │
-   │         Communities          │ real-time crowd analytics.   │
-   └──────────────────────────────┴──────────────────────────────┘
-```
+### **TOOLS & TECHNOLOGIES**
+* **Frontend Architecture**: React 19 (SPA/PWA), Vite, Vanilla CSS Design System with custom dark glassmorphism styling, Lucide Icons, Leaflet.js mapping library.
+* **Backend Architecture**: Node.js, Express.js REST API with Strategy Pattern service layers.
+* **Data Storage**: SQLite with Write-Ahead Logging (WAL) mode and indexed relational tables.
+* **Real-Time Communications**: Socket.io (WebSocket duplex streaming).
+* **Security & Authentication**: JSON Web Tokens (JWT), bcrypt password hashing, role-based authorization middleware.
+* **DevOps, Testing & Deployment**: Docker containerization, Node Test Runner, Git version control, Render Cloud hosting.
 
 ---
 
-## 💡 6. Feedback & Thesis Defense Tips
-
-### 🌟 1. Defense Talking Points (How to Ace Panel Questions)
-
-* **Q: "Why didn't you just use selfies like PGIN?"**
-  * **Answer**: *"Selfie-based biometrics cause severe storage overhead (thousands of 3MB images per event), require manual facial inspection by proctors, and introduce privacy concerns. TapIn uses browser-native Geolocation and multi-sensor telemetry checks to achieve passive presence verification without storing students' photos or overloading server bandwidth."*
-* **Q: "What makes your geofencing better than other student projects?"**
-  * **Answer**: *"Most student capstones implement simple circular Haversine distance checks from a single point. Real university venues are rectangular, L-shaped, or irregular. TapIn implements the Jordan Curve Ray-Casting Point-in-Polygon algorithm with an interactive vertex editor and multi-tier Haversine bounding sphere pre-filtering for $O(1)$ distant rejection."*
-* **Q: "How do you detect fake GPS apps?"**
-  * **Answer**: *"We cross-reference multiple independent signals: position displacement velocity, static precision repetitions, timestamp sequence consistency, and hardware accelerometer motion data (`DeviceMotionEvent`). If someone's reported coordinates move while their phone's accelerometer detects zero physical acceleration, the system flags a Sensor Motion Mismatch."*
-
----
-
-### 🚀 2. Slide Deck Recommendations (Visual Organization)
-
-1. **Slide 1**: Title, Authors, Degree, University (MMSU CCIS).
-2. **Slide 2**: The OJT Story / Motivation (PGIN & DOST Region 1 contrasts).
-3. **Slide 3**: The Problem & The 4 Gaps (Paper loss, No continuous presence, Buddy punching, No live tally).
-4. **Slide 4**: The TapIn Solution (PWA, zero-login, Student ID auto-resolution).
-5. **Slide 5**: Algorithmic Pivot: Circular Haversine vs. Ray-Casting Point-in-Polygon (show diagram of L-shaped building).
-6. **Slide 6**: Anti-Spoofing Architecture (4 heuristics + ML Logistic Regression diagram).
-7. **Slide 7**: Live System Demonstration (Interactive Polygon Map Picker + Student Check-in + Live Admin Dashboard).
-8. **Slide 8**: Evaluation Harness Results (Accuracy, Precision, Recall, F1 Score).
-9. **Slide 9**: Research Thrusts & SDG Alignment (SDG 4, 9, 11).
-10. **Slide 10**: Summary & Future Work (Offline mesh sync, BLE beacons).
+### **EXPECTED OUTPUTS**
+A production-grade, mobile-responsive Progressive Web Application (PWA) delivering:
+1. **Public Student Attendance Interface**: Zero-login portal featuring automatic ID input masking, instant master record lookup, native Geolocation watcher, and live polygon radar visualization.
+2. **Ray-Casting Point-in-Polygon Geofence Engine**: High-precision boundary verification with fast Haversine bounding sphere pre-filtering.
+3. **Interactive Venue Geofence Editor**: Leaflet canvas enabling admins to click, drag, scale, rotate, and trace arbitrary venue footprints (L-shapes, U-shapes, quadrangles).
+4. **Automated Penalty & Compliance Engine**: Machine-evaluates post-event logs and generates college-customizable infraction breakdowns.
+5. **Real-Time Administrative Dashboard**: Socket.io live telemetry hub showing in-range verified counts, active grace periods, and live student pins.
+6. **Decoupled Spoofing Research Lab & CLI Harness**: Interactive testing suite with benchmark evaluation reporting academic classification metrics.
+7. **Multi-Role Access Control & Export Center**: Strict Superadmin and Admin role segregation with one-click report generation in CSV, Excel (.xlsx), and PDF formats.
 
 ---
 
-*Document compiled and verified for TapIn System Version 3.0 (Day 3).*
+### **EXPECTED BENEFICIARIES**
+* **Students**: Eliminates congested entrance lines, saving 15–30 minutes per event through an instant, 3-step mobile check-in.
+* **Event Organizers & Faculty Proctors**: Relieves personnel from tedious manual roll calls and manual spreadsheet tallying; provides real-time crowd distribution and venue occupancy data.
+* **University Administration & College Offices**: Provides auditable, tamper-resistant attendance records with verifiable physical presence tracking for institutional clearance and accreditation compliance.
+
+---
+
+### **SDG COVERAGE & RESEARCH THRUST ALIGNMENT**
+
+#### **Research Thrusts (MMSU CCIS)**:
+1. *Information Systems and Software Development*
+2. *Digital Transformation and Smart Campus Technologies*
+3. *Geographic Information Systems (GIS) and Location-Based Services (LBS)*
+
+#### **Sustainable Development Goals (SDGs)**:
+* **SDG 4: Quality Education** (Target 4.7) — Promotes institutional transparency, academic event accountability, and verified student participation.
+* **SDG 9: Industry, Innovation, and Infrastructure** (Target 9.5) — Fosters smart campus digital infrastructure through modern web technologies and sensor-fusion algorithms.
+* **SDG 11: Sustainable Cities and Communities** (Target 11.a) — Eliminates disposable paper sign-in sheets and enables intelligent venue space management.
+
+---
+
+### **RESEARCH INTEREST & MOTIVATION**
+The motivation for developing TapIn originates from direct observations during On-the-Job Training (OJT) assignments:
+
+1. **Provincial Government of Ilocos Norte (PGIN - IT Office Department)**:  
+   *Observed regular employees checking out instantaneously using mobile geofencing on their smartphones, while student interns were subjected to long, slow-moving queues at physical barcode scanner stations.*
+2. **Department of Science and Technology (DOST Region 1 - ITSM Unit)**:  
+   *Observed fully digitized, traceable institutional information systems that operate without paper redundancy, emphasizing the operational gap in standard university event management.*
+
+These experiences led to the central capstone hypothesis:
+> *"University attendance verification can be completely automated through non-invasive mobile browser geolocation, eliminating entrance queues while enforcing continuous physical presence through mathematical polygon geofencing and multi-signal spoofing countermeasures."*
+
+---
+
+### **TEAM PLAN**
+In accordance with capstone guidelines where group members submit individual proposals, formal execution and division of development tasks (Frontend UI/UX, Spatial Geofencing Engine, Backend REST/Socket.io API, Anti-Spoofing Evaluation Harness) will be finalized upon panel approval of this proposal.
+
+---
+
+### **STRENGTHS, WEAKNESSES & COMPENSATION STRATEGY**
+
+* **Strengths**: Solid foundation in modern web development (React, HTML5, CSS3, JavaScript ES6+), backend API architecture (Node.js, Express, PHP, Python), relational databases (SQLite, MySQL), and component-driven UI design.
+* **Weaknesses**: Initial unfamiliarity with advanced spherical trigonometric algorithms, Point-in-Polygon ray intersection math, and multi-sensor browser hardware security (`DeviceMotionEvent`).
+* **Compensation Strategy**: Successfully mitigated through deep review of computational geometry literature (Jordan Curve Theorem), implementation of clean Strategy Pattern software architecture, development of a standalone 15-case automated unit testing suite (`testGeofence.js`), and empirical evaluation using a research CLI benchmark harness.
+
+---
+
+*Form submitted for Capstone & Thesis Proposal Review — Department of Computer Science, College of Computing and Information Sciences (CCIS), Mariano Marcos State University.*
