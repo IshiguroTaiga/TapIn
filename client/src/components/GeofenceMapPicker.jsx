@@ -149,7 +149,7 @@ export default function GeofenceMapPicker({
 
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
-  const [dragMode, setDragMode] = useState('center_only'); // 'center_only' | 'entire_shape'
+  const [dragMode, setDragMode] = useState('entire_shape'); // Default: moving center moves entire border together
   const [isCustomCenter, setIsCustomCenter] = useState(Boolean(centerLat && centerLng));
 
   // Local polygon state
@@ -384,8 +384,27 @@ export default function GeofenceMapPicker({
             Math.round((lat + dLat) * 100000) / 100000,
             Math.round((lng + dLng) * 100000) / 100000
           ]);
+
           if (polygonLayerRef.current) {
             polygonLayerRef.current.setLatLngs(shifted);
+          }
+
+          // Live update all corner pins with the moving center
+          const cornerLayers = vertexMarkersGroupRef.current ? vertexMarkersGroupRef.current.getLayers() : [];
+          shifted.forEach((coord, i) => {
+            if (cornerLayers[i]) {
+              cornerLayers[i].setLatLng(coord);
+            }
+          });
+
+          // Live update all midpoint handles with the moving center
+          const midLayers = midpointMarkersGroupRef.current ? midpointMarkersGroupRef.current.getLayers() : [];
+          for (let i = 0; i < shifted.length; i++) {
+            const j = (i + 1) % shifted.length;
+            const mid = [(shifted[i][0] + shifted[j][0]) / 2, (shifted[i][1] + shifted[j][1]) / 2];
+            if (midLayers[i]) {
+              midLayers[i].setLatLng(mid);
+            }
           }
         }
       });
