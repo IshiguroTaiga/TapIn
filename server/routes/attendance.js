@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('../db');
-const { calculateDistance, isWithinGeofence } = require('../services/haversine');
+const { isWithinPolygonGeofence, calculateDistance, normalizePolygon } = require('../services/geofence');
 const { spoofDetector } = require('../services/spoofDetection');
 const { authenticateToken } = require('../middleware/auth');
 
@@ -64,9 +64,16 @@ router.post('/submit', (req, res) => {
     }
   }
 
-  // 4. Geofence Distance Calculation using Haversine
-  const distance = calculateDistance(lat, lng, activeEvent.center_lat, activeEvent.center_lng);
-  const inRange = distance <= activeEvent.radius_m;
+  // 4. Ray-Casting Point-in-Polygon Geofence Verification with Fast Pre-filtering
+  const polygon = activeEvent.polygon_coordinates ? normalizePolygon(activeEvent.polygon_coordinates) : [];
+  const geofenceResult = isWithinPolygonGeofence([parseFloat(lat), parseFloat(lng)], polygon, {
+    centerLat: activeEvent.center_lat,
+    centerLng: activeEvent.center_lng,
+    radiusMeters: activeEvent.radius_m
+  });
+
+  const inRange = geofenceResult.inRange;
+  const distance = geofenceResult.distanceToCentroid;
 
   // 5. GPS Spoofing Detection Module Pass
   const studentHistory = existingLogs.map(l => ({
@@ -97,12 +104,13 @@ router.post('/submit', (req, res) => {
     status = 'rejected';
   } else if (!inRange) {
     // Check if student is within configured grace period distance/time
-    // Borderline acceptance if student is slightly outside (e.g. within 2x radius during grace window)
-    if (distance <= activeEvent.radius_m * 2.5) {
+    // Borderline acceptance if student is slightly outside polygon boundary (e.g. within 2.2x bounding radius or within 100m)
+    const borderlineTolerance = Math.max(activeEvent.radius_m * 2.2, 100);
+    if (distance <= borderlineTolerance) {
       status = 'borderline';
     } else {
       rejected = true;
-      rejectionReason = `Location outside event geofence perimeter! You are ${Math.round(distance - activeEvent.radius_m)}m beyond the ${activeEvent.radius_m}m radius.`;
+      rejectionReason = `Location outside event geofence polygon! Your coordinates are outside the designated venue boundary.`;
       status = 'rejected';
     }
   }
@@ -148,9 +156,13 @@ router.post('/submit', (req, res) => {
       grace_minutes: activeEvent.grace_minutes
     },
     geofence: {
+      algorithm: 'Ray-Casting Point-in-Polygon (PIP) with Haversine Pre-filter',
       inRange,
-      distanceMeters: distance,
-      radiusMeters: activeEvent.radius_m
+      onBoundary: geofenceResult.onBoundary,
+      crossings: geofenceResult.crossings,
+      preFiltered: geofenceResult.preFiltered,
+      distanceMeters: Math.round(distance * 10) / 10,
+      polygonVertices: polygon.length
     },
     spoofDetection: {
       trustScore: spoofEval.trustScore,
@@ -164,7 +176,7 @@ router.post('/submit', (req, res) => {
     message: rejected
       ? rejectionReason
       : status === 'borderline'
-      ? `Successfully recorded ${action.toUpperCase()}! Note: Your location is slightly outside the primary radius, so it was logged as Borderline under the ${activeEvent.grace_minutes}-min grace period.`
+      ? `Successfully recorded ${action.toUpperCase()}! Note: Your location is slightly outside the venue polygon boundary, so it was logged as Borderline under the ${activeEvent.grace_minutes}-min grace period.`
       : `Successfully recorded ${action.toUpperCase()} for ${student.name}!`
   };
 

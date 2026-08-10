@@ -196,7 +196,7 @@ export default function AdminDashboard() {
             <CheckCircle className="w-4 h-4" />
           </div>
           <div className="text-xl sm:text-2xl font-bold text-emerald-400">{summary.inRangeCount}</div>
-          <span className="text-[10px] text-emerald-500/80">Inside geofence radius</span>
+          <span className="text-[10px] text-emerald-500/80">Inside polygon boundary</span>
         </div>
 
         <div className="glass-panel p-3.5 sm:p-4 rounded-2xl border border-amber-500/20 bg-amber-950/20 space-y-1">
@@ -226,7 +226,9 @@ export default function AdminDashboard() {
               <Radio className="w-4 h-4 text-indigo-400 animate-pulse" />
               Live Campus Map Telemetry ({activeEvent.name})
             </span>
-            <span className="text-[11px] text-slate-400 font-mono">Geofence Radius: {activeEvent.radius_m}m • Grace: {activeEvent.grace_minutes}m</span>
+            <span className="text-[11px] text-slate-400 font-mono">
+              Geofence: Polygon ({Array.isArray(activeEvent.polygon_coordinates) ? activeEvent.polygon_coordinates.length : 6} vertices) • Grace: {activeEvent.grace_minutes}m
+            </span>
           </div>
           <LiveGeofenceMap
             event={activeEvent}
@@ -328,7 +330,7 @@ export default function AdminDashboard() {
                       <td className="py-3 px-3">
                         {s.in_range === 1 ? (
                           <span className="inline-flex items-center gap-1 text-emerald-400 font-medium">
-                            <CheckCircle className="w-3.5 h-3.5" /> In-Range
+                            <CheckCircle className="w-3.5 h-3.5" /> Inside Polygon
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 text-amber-400 font-medium">
@@ -411,7 +413,7 @@ export default function AdminDashboard() {
                   <div className="flex items-center justify-between text-[11px] text-slate-400">
                     <span>{log.student_id} • {log.action.toUpperCase()}</span>
                     <span className={log.in_range ? 'text-emerald-400' : 'text-amber-400'}>
-                      {log.in_range ? 'In Geofence' : 'Outside Radius'}
+                      {log.in_range ? 'In Polygon' : 'Outside Boundary'}
                     </span>
                   </div>
 

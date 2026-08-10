@@ -9,8 +9,10 @@
 ### 1. Student Flow (Public Homepage `/`)
 - **Zero Login Required**: Students log in by entering their official Student ID (verified against a master database seeded via CSV).
 - **No Selfie / Biometrics**: Attendance is verified strictly through location geofencing and multi-signal spoofing checks.
+- **Ray-Casting Point-in-Polygon Geofencing**: Computes containment against irregular campus venue polygons via Jordan Curve parity ray testing.
+- **Multi-Tier Haversine Pre-Filtering**: Leverages fast $O(1)$ Haversine bounding sphere and AABB filtering to optimize computation.
 - **Auto-Action Detection**: Intelligently determines whether `TIME_IN` or `TIME_OUT` applies.
-- **Grace Period Countdown**: Real-time 15-minute countdown for students who step outside the primary geofence perimeter. If the student re-enters before the timer expires, the countdown resets; if expired, the log is flagged as borderline / grace exceeded without locking out time-outs.
+- **Grace Period Countdown**: Real-time 15-minute countdown for students who step outside the venue polygon perimeter. If the student re-enters before the timer expires, the countdown resets; if expired, the log is flagged as borderline / grace exceeded without locking out time-outs.
 
 ### 2. Research Module: GPS Spoofing-Detection (`server/services/spoofDetection/`)
 Built as an independent, testable service that evaluates location reports before trusting them:
@@ -27,9 +29,9 @@ Built as an independent, testable service that evaluates location reports before
   - Ingests labeled CSV dataset traces (`is_spoofed: true/false`).
   - Computes confusion matrix ($TP, FP, TN, FN$) and outputs **Accuracy, Precision, Recall, Specificity, False Positive Rate (FPR), and F1 Score**.
 
-### 3. Real-Time Admin Dashboard
+### 3. Real-Time Admin Dashboard & Polygon Geofence Manager
 - **Socket.io Live Telemetry**: Live stream of students currently in-range, in grace countdown, or flagged for spoof anomalies.
-- **Event & Geofence Manager**: Set center lat/lng coordinates, radius slider ($50\text{m} - 500\text{m}$), grace period minutes, and target college/course/year filters.
+- **Interactive Polygon Geofence Editor**: Admin clicks to trace custom venue polygons, drags numbered vertex handles (#1, #2, #3...), undoes vertices, and loads presets (MMSU Sunken Garden, Teatro Oval, Hexagon).
 - **Multi-Window Scheduling**: Configurable multiple `TIME_IN` and `TIME_OUT` windows per event.
 
 ### 4. Penalty & Violation Engine (`server/services/penaltyEngine.js`)
@@ -37,7 +39,7 @@ Built as an independent, testable service that evaluates location reports before
   - `"No time-out recorded"`
   - `"No time-in recorded"`
   - `"Did not complete full event duration"`
-  - `"Exceeded allowed time outside event radius"`
+  - `"Exceeded allowed time outside event polygon geofence"`
   - `"GPS Spoofing / Location Anomaly Detected"`
 - Configurable violation types DB table allows adding or renaming reasons without code changes.
 
@@ -60,8 +62,9 @@ Log in as Admin or Superadmin and navigate to the **Spoof Research Lab** tab to 
 
 ```
 TapIn/
-├── package.json                   # Root package & npm scripts
+├── package.json                   # Root package & npm scripts (npm test, npm run eval:rule)
 ├── README.md                      # Project documentation
+├── documentation.md               # Version 3.0 technical changelog
 ├── server/
 │   ├── index.js                   # Express + Socket.io server entry point
 │   ├── db.js                      # SQLite database & table initialization
@@ -69,7 +72,8 @@ TapIn/
 │   ├── middleware/
 │   │   └── auth.js                # JWT & role verification middleware
 │   ├── services/
-│   │   ├── haversine.js           # Geofence distance math
+│   │   ├── geofence.js            # Ray-Casting PIP algorithm & Haversine pre-filter
+│   │   ├── haversine.js           # Great-circle distance calculations
 │   │   ├── penaltyEngine.js       # Post-event violation evaluation engine
 │   │   └── spoofDetection/        # Research module core
 │   │       ├── index.js           # Spoof detector facade
@@ -79,11 +83,12 @@ TapIn/
 │   ├── routes/
 │   │   ├── auth.js                # Login & admin account management
 │   │   ├── students.js            # Student lookup & CSV import
-│   │   ├── events.js              # Event & geofence CRUD
-│   │   ├── attendance.js          # Student submission & live status
+│   │   ├── events.js              # Event & polygon geofence CRUD
+│   │   ├── attendance.js          # Student submission & PIP verification
 │   │   ├── penalties.js           # Violation evaluation endpoints
 │   │   └── spoof.js              # Research module lab endpoints
 │   └── scripts/
+│       ├── testGeofence.js        # Ray-Casting PIP 15-test unit suite (npm test)
 │       ├── evalSpoofDetector.js   # Research evaluation harness CLI tool
 │       └── generateSampleDataset.js # Labeled dataset generator
 └── client/
@@ -93,15 +98,19 @@ TapIn/
     └── src/
         ├── index.css              # Glassmorphism & dark theme styles
         ├── App.jsx                # Main application container
-        ├── pages/
-        │   ├── StudentHome.jsx    # Public student landing page
-        │   ├── AdminLogin.jsx     # Admin authentication modal
-        │   ├── AdminDashboard.jsx # Real-time Socket.io live dashboard
-        │   ├── EventManagement.jsx# Geofence & event manager
-        │   ├── AttendanceLogs.jsx # Historical logs & export center
-        │   ├── PenaltyEngineView.jsx# Penalty evaluation & config
-        │   ├── SpoofResearchLab.jsx# Interactive research lab UI
-        │   └── SuperadminAdmins.jsx# Admin account management
+        ├── components/
+        │   ├── GeofenceMapPicker.jsx # Interactive Polygon Drawing & Vertex Editor
+        │   ├── LiveGeofenceMap.jsx   # Live campus map with polygon overlay
+        │   └── Navbar.jsx            # Responsive navigation & mobile drawer
+        └── pages/
+            ├── StudentHome.jsx    # Public student landing page & PIP check
+            ├── AdminLogin.jsx     # Admin authentication modal
+            ├── AdminDashboard.jsx # Real-time Socket.io live dashboard
+            ├── EventManagement.jsx# Geofence & event manager
+            ├── AttendanceLogs.jsx # Historical logs & export center
+            ├── PenaltyEngineView.jsx# Penalty evaluation & config
+            ├── SpoofResearchLab.jsx# Interactive research lab UI
+            └── SuperadminAdmins.jsx# Admin account management
 ```
 
 ---

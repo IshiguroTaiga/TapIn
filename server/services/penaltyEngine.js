@@ -98,7 +98,7 @@ function evaluateEventPenalties(eventId) {
     if (graceExceededLogs.length > 0) {
       violationsDetected.push({
         code: 'EXCEEDED_GRACE_PERIOD',
-        description: violationConfigMap['EXCEEDED_GRACE_PERIOD'] || 'Exceeded Allowed Radius Grace Period'
+        description: violationConfigMap['EXCEEDED_GRACE_PERIOD'] || 'Exceeded Allowed Geofence Grace Period'
       });
     }
 

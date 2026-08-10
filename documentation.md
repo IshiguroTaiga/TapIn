@@ -3,6 +3,64 @@
 
 ---
 
+## 📌 Version 3.0 (Day 3 Updates & Enhancements)
+
+### 🚀 What Has Been Updated & Implemented
+
+#### 1. 📐 Pivot to Ray-Casting Point-in-Polygon (PIP) Geofencing Engine (`server/services/geofence.js`)
+- **Algorithmic Differentiation**: Replaced standard circular-radius Haversine comparison with an exact **Ray-Casting Point-in-Polygon (PIP)** test based on the **Jordan Curve Theorem**. Real-world university venue perimeters (quadrangles, auditoriums, sunken gardens, athletic complexes) are non-circular polygons. This eliminates false positives/negatives inherent in circular approximations (such as including adjacent buildings across streets while excluding distant corners of asymmetric stadiums).
+- **Mathematical Formulation**:
+  - Given a test point $P = (lat_p, lng_p)$ and an ordered sequence of $N$ polygon boundary vertices $V = [v_0, v_1, \dots, v_{N-1}]$ where $v_i = (lat_i, lng_i)$:
+  - An eastward horizontal ray is cast from $(lng_p, lat_p)$ to $(+\infty, lat_p)$.
+  - For each polygon edge segment connecting $v_i = (lat_i, lng_i)$ and $v_j = (lat_j, lng_j)$ where $j = (i + 1) \bmod N$:
+    1. **Straddle Test**: Check if the horizontal line at $lat_p$ intersects the latitude interval of the edge:
+       $$(lat_i > lat_p) \neq (lat_j > lat_p)$$
+    2. **X-Intersection Test**: Compute the intersection longitude $x_{\text{int}}$:
+       $$x_{\text{int}} = lng_i + \frac{(lat_p - lat_i) \cdot (lng_j - lng_i)}{lat_j - lat_i}$$
+    3. If $lng_p < x_{\text{int}}$, the ray crosses the edge $\rightarrow \text{crossings} = \text{crossings} + 1$.
+  - **Parity Rule**:
+    $$\text{inside} = (\text{crossings} \bmod 2 \equiv 1)$$
+- **Boundary & Vertex Edge Collision Handling**:
+  - If a point lies directly on a polygon vertex or falls within an $\epsilon$-band ($10^{-7}$) collinear to an edge segment:
+    $$(lat_p - lat_i)(lng_j - lng_i) - (lng_p - lng_i)(lat_j - lat_i) \approx 0$$
+    $$\text{and } lat_p \in [\min(lat_i, lat_j), \max(lat_i, lat_j)],\quad lng_p \in [\min(lng_i, lng_j), \max(lng_i, lng_j)]$$
+    It is immediately classified as **Inside Geofence** (`onBoundary: true`).
+
+#### 2. ⚡ Multi-Tier Fast Pre-filtering Optimization
+- **Haversine Repurposed as Fast Bounding Sphere**: Rather than discarding the Haversine formula, it is repurposed as an ultra-fast $O(1)$ rough-distance pre-filter:
+  1. **Haversine Bounding Sphere Pre-filter**: Computes polygon centroid $C = (\overline{lat}, \overline{lng})$ and maximum vertex radius $R_{\max} = \max_{i} \text{Haversine}(C, v_i)$. Points with $\text{Haversine}(C, P) > R_{\max} + \text{margin}$ (e.g. 15m) are immediately rejected in $O(1)$ spherical trigonometric time without evaluating $N$ polygon segments.
+  2. **Axis-Aligned Bounding Box (AABB) Pre-filter**: Bounding box $[minLat, maxLat] \times [minLng, maxLng]$ discards any coordinates outside latitude/longitude extrema in sub-microsecond scalar comparisons.
+  3. **Exact Ray-Casting**: Executed only on points that pass both pre-filter stages, preventing wasted compute cycles on obviously far coordinates.
+
+#### 3. 🗺️ Interactive Polygon Geofence Editor for Admin/Superadmin (`client/src/components/GeofenceMapPicker.jsx`)
+- **Visual Vertex Tracing Tool**: Replaced the center lat/lng and radius slider inputs with an interactive polygon-drawing canvas on Leaflet.
+- **Draggable Numbered Vertex Handles**: Each vertex placed by the admin appears with an interactive glowing numbered pin (#1, #2, #3, ...) that can be dragged in real time to reshape the venue boundary.
+- **Action Controls**:
+  - *Click to Place*: Admin clicks anywhere on the map to append vertices.
+  - *Undo Last Vertex*: Rolls back the latest placed vertex.
+  - *Clear / Reset*: Resets the canvas.
+  - *Presets*: 1-click apply presets for MMSU Sunken Garden Quadrangle, Teatro Ilocandia Oval, or a regular Hexagon perimeter.
+  - *Pick My Location*: Snaps map view and centers geofence shape on the device's native GPS position.
+- **Dynamic Stats Display**: Automatically calculates and displays vertex count, centroid coordinates, and equivalent bounding radius.
+
+#### 4. 📲 Polygon-Aware Student Verification & Live Dashboard Telemetry
+- **Student Geofence Verification (`server/routes/attendance.js`)**: Submissions are evaluated through `isWithinPolygonGeofence(point, polygon)`, returning exact ray crossings, centroid distance, and containment status.
+- **Student UI Client-Side PIP (`client/src/pages/StudentHome.jsx`)**: Implemented standalone client-side PIP test in React so students receive instantaneous visual feedback ("In Polygon" vs "Outside Polygon") before submitting.
+- **Live Campus Radar Map (`client/src/components/LiveGeofenceMap.jsx`)**: Updated student and admin live maps to render the exact polygon boundary shape (`L.polygon`) with dashed perimeter styling and centroid pin instead of a static circle.
+- **Grace Period State Machine**: Keyed strictly to "Inside Polygon" / "Outside Polygon". If a student exits the venue polygon boundary, the 15-minute grace period timer activates; re-entering the polygon resets the timer; exceeding the timer marks the log as borderline/grace violation without preventing time-out.
+
+#### 5. 🧪 Unit Test Suite (`server/scripts/testGeofence.js`) & Evaluation Harness Confirmation
+- **15 Automated Unit Tests**: Created `server/scripts/testGeofence.js` (executable via `npm test` or `npm run test:geofence`) verifying:
+  - Strict convex & concave L-shaped containment
+  - Exterior points across all cardinal directions
+  - Boundary edge and vertex collinear collisions
+  - Fast Haversine sphere and AABB pre-filter rejections
+  - Flexible coordinate format parsing (`[lat, lng]`, `{lat, lng}`, GeoJSON, JSON strings)
+  - Geometric centroid and bounding box calculations
+- **Evaluation Harness Confirmation**: Verified that `server/scripts/evalSpoofDetector.js` evaluates anti-spoofing heuristic and ML classifiers independently of venue geofence geometry, ensuring existing benchmark tests (`npm run eval:rule`, `npm run eval:ml`) continue to operate with 100% fidelity.
+
+---
+
 ## 📌 Version 2.0 (Day 2 Updates & Enhancements)
 
 ### 🚀 What Has Been Updated & Implemented

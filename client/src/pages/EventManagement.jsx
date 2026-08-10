@@ -26,9 +26,15 @@ export default function EventManagement() {
   const [customEventId, setCustomEventId] = useState('');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [centerLat, setCenterLat] = useState(18.1960);
-  const [centerLng, setCenterLng] = useState(120.5927);
-  const [radiusMeters, setRadiusMeters] = useState(150);
+  const [polygonCoordinates, setPolygonCoordinates] = useState([
+    [18.1960, 120.5920],
+    [18.1972, 120.5920],
+    [18.1972, 120.5936],
+    [18.1960, 120.5936]
+  ]);
+  const [centerLat, setCenterLat] = useState(18.1965);
+  const [centerLng, setCenterLng] = useState(120.5928);
+  const [radiusMeters, setRadiusMeters] = useState(120);
   const [graceMinutes, setGraceMinutes] = useState(15);
   const [collegeFilter, setCollegeFilter] = useState('all');
   const [courseFilter, setCourseFilter] = useState('all');
@@ -61,9 +67,16 @@ export default function EventManagement() {
     setCustomEventId('');
     setName('');
     setDescription('');
-    setCenterLat(18.1960);
-    setCenterLng(120.5927);
-    setRadiusMeters(150);
+    const defaultPoly = [
+      [18.1960, 120.5920],
+      [18.1972, 120.5920],
+      [18.1972, 120.5936],
+      [18.1960, 120.5936]
+    ];
+    setPolygonCoordinates(defaultPoly);
+    setCenterLat(18.1965);
+    setCenterLng(120.5928);
+    setRadiusMeters(120);
     setGraceMinutes(15);
     setCollegeFilter('all');
     setCourseFilter('all');
@@ -80,6 +93,12 @@ export default function EventManagement() {
     setCustomEventId(String(event.id));
     setName(event.name);
     setDescription(event.description || '');
+    setPolygonCoordinates(event.polygon_coordinates || [
+      [18.1960, 120.5920],
+      [18.1972, 120.5920],
+      [18.1972, 120.5936],
+      [18.1960, 120.5936]
+    ]);
     setCenterLat(event.center_lat);
     setCenterLng(event.center_lng);
     setRadiusMeters(event.radius_m);
@@ -110,6 +129,7 @@ export default function EventManagement() {
       new_id: customEventId ? parseInt(customEventId) : undefined,
       name,
       description,
+      polygon_coordinates: polygonCoordinates,
       center_lat: parseFloat(centerLat),
       center_lng: parseFloat(centerLng),
       radius_m: parseFloat(radiusMeters),
@@ -212,12 +232,14 @@ export default function EventManagement() {
               {/* Geofence Parameters */}
               <div className="grid grid-cols-2 gap-3 text-xs bg-slate-900/60 p-3 rounded-xl border border-slate-800/80">
                 <div>
-                  <span className="text-[10px] text-slate-500 block uppercase">Center Coords</span>
-                  <span className="font-mono text-slate-300">{event.center_lat.toFixed(4)}, {event.center_lng.toFixed(4)}</span>
+                  <span className="text-[10px] text-slate-500 block uppercase">Geofence Boundary</span>
+                  <span className="font-bold text-indigo-400">
+                    Polygon ({Array.isArray(event.polygon_coordinates) ? event.polygon_coordinates.length : 6} vertices)
+                  </span>
                 </div>
                 <div>
-                  <span className="text-[10px] text-slate-500 block uppercase">Geofence Radius</span>
-                  <span className="font-bold text-indigo-400">{event.radius_m} meters</span>
+                  <span className="text-[10px] text-slate-500 block uppercase">Venue Centroid</span>
+                  <span className="font-mono text-slate-300">{event.center_lat.toFixed(4)}, {event.center_lng.toFixed(4)}</span>
                 </div>
                 <div>
                   <span className="text-[10px] text-slate-500 block uppercase">Grace Period</span>
@@ -319,58 +341,22 @@ export default function EventManagement() {
                 />
               </div>
 
-              {/* Geofence Map Center & Radius */}
+              {/* Interactive Polygon Geofence Drawer & Controls */}
               <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-4">
-                {/* Interactive Leaflet Map Picker Bounded to Ilocos Norte */}
                 <GeofenceMapPicker
+                  polygon={polygonCoordinates}
                   centerLat={centerLat}
                   centerLng={centerLng}
                   radiusMeters={radiusMeters}
-                  onChangeCenter={(lat, lng) => {
-                    setCenterLat(Math.round(lat * 100000) / 100000);
-                    setCenterLng(Math.round(lng * 100000) / 100000);
+                  onChangePolygon={(poly, centroid, maxR) => {
+                    setPolygonCoordinates(poly);
+                    setCenterLat(centroid.lat);
+                    setCenterLng(centroid.lng);
+                    setRadiusMeters(maxR);
                   }}
                 />
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-slate-400">Center Latitude</label>
-                    <input
-                      type="number"
-                      step="0.00001"
-                      value={centerLat}
-                      onChange={(e) => setCenterLat(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-white font-mono"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="text-slate-400">Center Longitude</label>
-                    <input
-                      type="number"
-                      step="0.00001"
-                      value={centerLng}
-                      onChange={(e) => setCenterLng(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-white font-mono"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-slate-400">Geofence Radius: <strong className="text-indigo-400">{radiusMeters}m</strong></label>
-                    <input
-                      type="range"
-                      min="30"
-                      max="500"
-                      step="10"
-                      value={radiusMeters}
-                      onChange={(e) => setRadiusMeters(e.target.value)}
-                      className="w-full accent-indigo-500 mt-2"
-                    />
-                  </div>
-
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-800/80">
                   <div>
                     <label className="text-slate-400">Grace Period: <strong className="text-amber-400">{graceMinutes} mins</strong></label>
                     <input
@@ -381,21 +367,23 @@ export default function EventManagement() {
                       onChange={(e) => setGraceMinutes(e.target.value)}
                       className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-white font-bold"
                     />
+                    <span className="text-[10px] text-slate-500 block">Allowed outside duration before violation</span>
                   </div>
-                </div>
 
-                <div className="space-y-1 pt-1">
-                  <label className="text-slate-400">Target College Filter</label>
-                  <select
-                    value={collegeFilter}
-                    onChange={(e) => setCollegeFilter(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-white text-xs"
-                  >
-                    <option value="all">All Colleges (General Assembly)</option>
-                    {MMSU_COLLEGES.map((c) => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </select>
+                  <div>
+                    <label className="text-slate-400">Target College Filter</label>
+                    <select
+                      value={collegeFilter}
+                      onChange={(e) => setCollegeFilter(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-white text-xs"
+                    >
+                      <option value="all">All Colleges (General Assembly)</option>
+                      {MMSU_COLLEGES.map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                    <span className="text-[10px] text-slate-500 block">Student eligibility restriction</span>
+                  </div>
                 </div>
               </div>
 

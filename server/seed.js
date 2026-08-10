@@ -26,9 +26,9 @@ function seed() {
     ['NO_TIME_IN', 'No Time-In Recorded', 'Student failed to log Time-In during any designated time-in window', 'Marked Absent'],
     ['NO_TIME_OUT', 'No Time-Out Recorded', 'Student logged Time-In but failed to log Time-Out when event ended', 'Partial Credit Deduction'],
     ['INCOMPLETE_DURATION', 'Did Not Complete Full Duration', 'Student left the event perimeter before designated completion time', 'Violation Warning'],
-    ['EXCEEDED_GRACE_PERIOD', 'Exceeded Allowed Radius Grace Period', 'Student spent more than allowed grace period duration outside geofence', 'Grace Violation'],
+    ['EXCEEDED_GRACE_PERIOD', 'Exceeded Allowed Geofence Grace Period', 'Student spent more than allowed grace period duration outside event polygon geofence', 'Grace Violation'],
     ['SPOOF_SUSPECTED', 'GPS Spoofing / Location Anomaly Detected', 'Location report failed real-time spoof detection algorithms', 'Security Audit Required'],
-    ['BORDERLINE_OUT_OF_BOUNDS', 'Borderline Location Attendance', 'Timed in or out within grace window slightly beyond standard radius', 'Flagged Log']
+    ['BORDERLINE_OUT_OF_BOUNDS', 'Borderline Location Attendance', 'Timed in or out within grace window slightly beyond polygon boundary', 'Flagged Log']
   ];
 
   violationTypes.forEach(vt => insertViolationType.run(...vt));

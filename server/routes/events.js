@@ -1,8 +1,56 @@
 const express = require('express');
 const db = require('../db');
 const { authenticateToken, requireRole } = require('../middleware/auth');
+const {
+  normalizePolygon,
+  calculateCentroid,
+  calculateMaxRadius
+} = require('../services/geofence');
 
 const router = express.Router();
+
+/**
+ * Helper to generate a default regular polygon (hexagon) around a center point
+ */
+function generateDefaultPolygon(centerLat, centerLng, radiusMeters = 100) {
+  const points = [];
+  const earthRadius = 6371000;
+  const numSides = 6;
+  for (let i = 0; i < numSides; i++) {
+    const angle = (i * 2 * Math.PI) / numSides;
+    const dLat = (radiusMeters * Math.cos(angle)) / earthRadius;
+    const dLng = (radiusMeters * Math.sin(angle)) / (earthRadius * Math.cos(centerLat * (Math.PI / 180)));
+    const lat = centerLat + dLat * (180 / Math.PI);
+    const lng = centerLng + dLng * (180 / Math.PI);
+    points.push([Math.round(lat * 100000) / 100000, Math.round(lng * 100000) / 100000]);
+  }
+  return points;
+}
+
+/**
+ * Format event object with parsed polygon coordinates
+ */
+function formatEvent(e) {
+  if (!e) return null;
+  let poly = null;
+  if (e.polygon_coordinates) {
+    try {
+      poly = typeof e.polygon_coordinates === 'string' ? JSON.parse(e.polygon_coordinates) : e.polygon_coordinates;
+    } catch (err) {
+      poly = null;
+    }
+  }
+
+  // Fallback to generated polygon if not set
+  if (!poly || !Array.isArray(poly) || poly.length < 3) {
+    poly = generateDefaultPolygon(e.center_lat, e.center_lng, e.radius_m || 100);
+  }
+
+  return {
+    ...e,
+    polygon_coordinates: poly
+  };
+}
 
 // Get all events
 router.get('/', (req, res) => {
@@ -13,13 +61,15 @@ router.get('/', (req, res) => {
     ORDER BY e.created_at DESC
   `).all();
 
-  // Attach windows for each event
+  // Attach windows for each event & format polygon
   const getWindows = db.prepare(`SELECT * FROM event_windows WHERE event_id = ? ORDER BY start_time ASC`);
-  events.forEach(e => {
-    e.windows = getWindows.all(e.id);
+  const formattedEvents = events.map(e => {
+    const formatted = formatEvent(e);
+    formatted.windows = getWindows.all(e.id);
+    return formatted;
   });
 
-  res.json(events);
+  res.json(formattedEvents);
 });
 
 // Get active event for student view (single latest with fallback)
@@ -53,8 +103,9 @@ router.get('/active', (req, res) => {
     return res.json(null);
   }
 
-  activeEvent.windows = db.prepare(`SELECT * FROM event_windows WHERE event_id = ? ORDER BY start_time ASC`).all(activeEvent.id);
-  res.json(activeEvent);
+  const formatted = formatEvent(activeEvent);
+  formatted.windows = db.prepare(`SELECT * FROM event_windows WHERE event_id = ? ORDER BY start_time ASC`).all(activeEvent.id);
+  res.json(formatted);
 });
 
 // Helper handler for active events list
@@ -92,11 +143,13 @@ const handleActiveEventsList = (req, res) => {
   }
 
   const getWindows = db.prepare(`SELECT * FROM event_windows WHERE event_id = ? ORDER BY start_time ASC`);
-  activeEvents.forEach(e => {
-    e.windows = getWindows.all(e.id);
+  const formattedList = activeEvents.map(e => {
+    const formatted = formatEvent(e);
+    formatted.windows = getWindows.all(e.id);
+    return formatted;
   });
 
-  res.json(activeEvents);
+  res.json(formattedList);
 };
 
 // Register active events endpoints
@@ -111,19 +164,21 @@ router.get('/:id', (req, res) => {
     return res.status(404).json({ error: 'Event not found' });
   }
 
-  event.windows = db.prepare(`SELECT * FROM event_windows WHERE event_id = ?`).all(event.id);
-  res.json(event);
+  const formatted = formatEvent(event);
+  formatted.windows = db.prepare(`SELECT * FROM event_windows WHERE event_id = ?`).all(event.id);
+  res.json(formatted);
 });
 
 // Create new event
 router.post('/', authenticateToken, requireRole(['admin', 'superadmin']), (req, res) => {
-  const {
+  let {
     id,
     name,
     description,
     center_lat,
     center_lng,
     radius_m = 100,
+    polygon_coordinates,
     grace_minutes = 15,
     college_filter = 'all',
     course_filter = 'all',
@@ -132,9 +187,36 @@ router.post('/', authenticateToken, requireRole(['admin', 'superadmin']), (req, 
     windows = []
   } = req.body;
 
-  if (!name || center_lat === undefined || center_lng === undefined) {
-    return res.status(400).json({ error: 'Name, center latitude, and center longitude required' });
+  if (!name) {
+    return res.status(400).json({ error: 'Event Name is required' });
   }
+
+  // Handle polygon coordinates & derive centroid and bounding radius
+  let normalizedPoly = normalizePolygon(polygon_coordinates);
+  if (normalizedPoly.length >= 3) {
+    const centroid = calculateCentroid(normalizedPoly);
+    if (center_lat === undefined || isNaN(parseFloat(center_lat))) {
+      center_lat = centroid.lat;
+    }
+    if (center_lng === undefined || isNaN(parseFloat(center_lng))) {
+      center_lng = centroid.lng;
+    }
+    const maxR = calculateMaxRadius(normalizedPoly, centroid);
+    if (radius_m === undefined || isNaN(parseFloat(radius_m))) {
+      radius_m = maxR;
+    }
+  } else {
+    // Generate default hexagon polygon around center_lat/center_lng if not provided
+    const lat = center_lat !== undefined ? parseFloat(center_lat) : 18.1960;
+    const lng = center_lng !== undefined ? parseFloat(center_lng) : 120.5927;
+    const rad = radius_m !== undefined ? parseFloat(radius_m) : 100;
+    center_lat = lat;
+    center_lng = lng;
+    radius_m = rad;
+    normalizedPoly = generateDefaultPolygon(lat, lng, rad);
+  }
+
+  const polygonString = JSON.stringify(normalizedPoly);
 
   let eventId;
   if (id !== undefined && id !== null && String(id).trim() !== '') {
@@ -145,15 +227,15 @@ router.post('/', authenticateToken, requireRole(['admin', 'superadmin']), (req, 
     }
 
     db.prepare(`
-      INSERT INTO events (id, name, description, center_lat, center_lng, radius_m, grace_minutes, college_filter, course_filter, year_filter, status, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(parsedId, name, description || '', parseFloat(center_lat), parseFloat(center_lng), parseFloat(radius_m), parseInt(grace_minutes), college_filter, course_filter, year_filter, status, req.user.id);
+      INSERT INTO events (id, name, description, center_lat, center_lng, radius_m, polygon_coordinates, grace_minutes, college_filter, course_filter, year_filter, status, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(parsedId, name, description || '', parseFloat(center_lat), parseFloat(center_lng), parseFloat(radius_m), polygonString, parseInt(grace_minutes), college_filter, course_filter, year_filter, status, req.user.id);
     eventId = parsedId;
   } else {
     const result = db.prepare(`
-      INSERT INTO events (name, description, center_lat, center_lng, radius_m, grace_minutes, college_filter, course_filter, year_filter, status, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(name, description || '', parseFloat(center_lat), parseFloat(center_lng), parseFloat(radius_m), parseInt(grace_minutes), college_filter, course_filter, year_filter, status, req.user.id);
+      INSERT INTO events (name, description, center_lat, center_lng, radius_m, polygon_coordinates, grace_minutes, college_filter, course_filter, year_filter, status, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(name, description || '', parseFloat(center_lat), parseFloat(center_lng), parseFloat(radius_m), polygonString, parseInt(grace_minutes), college_filter, course_filter, year_filter, status, req.user.id);
     eventId = result.lastInsertRowid;
   }
 
@@ -187,6 +269,7 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'superadmin']), (req
     center_lat,
     center_lng,
     radius_m,
+    polygon_coordinates,
     grace_minutes,
     college_filter,
     course_filter,
@@ -224,6 +307,22 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'superadmin']), (req
     }
   }
 
+  let finalPolyString = event.polygon_coordinates;
+  let finalCenterLat = center_lat !== undefined ? parseFloat(center_lat) : event.center_lat;
+  let finalCenterLng = center_lng !== undefined ? parseFloat(center_lng) : event.center_lng;
+  let finalRadius = radius_m !== undefined ? parseFloat(radius_m) : event.radius_m;
+
+  if (polygon_coordinates) {
+    const norm = normalizePolygon(polygon_coordinates);
+    if (norm.length >= 3) {
+      finalPolyString = JSON.stringify(norm);
+      const centroid = calculateCentroid(norm);
+      if (center_lat === undefined) finalCenterLat = centroid.lat;
+      if (center_lng === undefined) finalCenterLng = centroid.lng;
+      if (radius_m === undefined) finalRadius = calculateMaxRadius(norm, centroid);
+    }
+  }
+
   db.prepare(`
     UPDATE events SET
       name = ?,
@@ -231,6 +330,7 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'superadmin']), (req
       center_lat = ?,
       center_lng = ?,
       radius_m = ?,
+      polygon_coordinates = ?,
       grace_minutes = ?,
       college_filter = ?,
       course_filter = ?,
@@ -240,9 +340,10 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'superadmin']), (req
   `).run(
     name || event.name,
     description !== undefined ? description : event.description,
-    center_lat !== undefined ? parseFloat(center_lat) : event.center_lat,
-    center_lng !== undefined ? parseFloat(center_lng) : event.center_lng,
-    radius_m !== undefined ? parseFloat(radius_m) : event.radius_m,
+    finalCenterLat,
+    finalCenterLng,
+    finalRadius,
+    finalPolyString,
     grace_minutes !== undefined ? parseInt(grace_minutes) : event.grace_minutes,
     college_filter || event.college_filter,
     course_filter || event.course_filter,

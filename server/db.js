@@ -35,6 +35,7 @@ function initDb() {
       center_lat REAL NOT NULL,
       center_lng REAL NOT NULL,
       radius_m REAL NOT NULL DEFAULT 100,
+      polygon_coordinates TEXT,
       grace_minutes INTEGER NOT NULL DEFAULT 15,
       college_filter TEXT DEFAULT 'all',
       course_filter TEXT DEFAULT 'all',
@@ -119,6 +120,10 @@ function initDb() {
 
   try {
     db.exec(`ALTER TABLE students ADD COLUMN section TEXT DEFAULT 'A';`);
+  } catch (e) {}
+
+  try {
+    db.exec(`ALTER TABLE events ADD COLUMN polygon_coordinates TEXT;`);
   } catch (e) {}
 }
 

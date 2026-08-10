@@ -100,7 +100,7 @@ export default function AttendanceLogs() {
       'Course': l.course,
       'Year': l.year,
       'Action': l.action.toUpperCase(),
-      'In Geofence Radius': l.in_range ? 'Yes' : 'No',
+      'In Geofence Polygon': l.in_range ? 'Yes' : 'No',
       'Trust Score': l.trust_score,
       'Spoof Flagged': l.is_spoofed ? 'YES' : 'No',
       'Flags': l.spoof_flags || '',
@@ -310,11 +310,11 @@ export default function AttendanceLogs() {
                   <td className="py-3 px-3">
                     {log.in_range ? (
                       <span className="text-emerald-400 font-medium flex items-center gap-1">
-                        <CheckCircle className="w-3.5 h-3.5" /> Inside
+                        <CheckCircle className="w-3.5 h-3.5" /> Inside Polygon
                       </span>
                     ) : (
                       <span className="text-amber-400 font-medium flex items-center gap-1">
-                        <AlertTriangle className="w-3.5 h-3.5" /> Outside
+                        <AlertTriangle className="w-3.5 h-3.5" /> Outside Boundary
                       </span>
                     )}
                   </td>

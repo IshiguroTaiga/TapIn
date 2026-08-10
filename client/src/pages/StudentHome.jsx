@@ -128,6 +128,36 @@ export default function StudentHome({ onOpenPwaNotice }) {
     return () => clearTimeout(timer);
   }, [studentId]);
 
+  // Pure Ray-Casting Point-in-Polygon check for live client-side telemetry
+  const isPointInPolygon = (point, polygon) => {
+    if (!point || !polygon || polygon.length < 3) return false;
+    const [lat, lng] = Array.isArray(point) ? point : [point.lat, point.lng];
+    let inside = false;
+    const n = polygon.length;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      const p1 = Array.isArray(polygon[i]) ? polygon[i] : [polygon[i].lat, polygon[i].lng];
+      const p2 = Array.isArray(polygon[j]) ? polygon[j] : [polygon[j].lat, polygon[j].lng];
+      const [lat1, lng1] = p1;
+      const [lat2, lng2] = p2;
+
+      // On-segment boundary check
+      const minLat = Math.min(lat1, lat2) - 1e-7;
+      const maxLat = Math.max(lat1, lat2) + 1e-7;
+      const minLng = Math.min(lng1, lng2) - 1e-7;
+      const maxLng = Math.max(lng1, lng2) + 1e-7;
+      if (lat >= minLat && lat <= maxLat && lng >= minLng && lng <= maxLng) {
+        const cross = (lat - lat1) * (lng2 - lng1) - (lng - lng1) * (lat2 - lat1);
+        if (Math.abs(cross) <= 1e-7) return true;
+      }
+
+      const intersects = ((lat1 > lat) !== (lat2 > lat)) &&
+        (lng < (lng2 - lng1) * (lat - lat1) / (lat2 - lat1) + lng1);
+      if (intersects) inside = !inside;
+    }
+    return inside;
+  };
+
   // Request & Watch Geolocation
   const requestLocation = () => {
     if (!('geolocation' in navigator)) {
@@ -147,11 +177,17 @@ export default function StudentHome({ onOpenPwaNotice }) {
         setCoords({ lat, lng });
         setAccuracy(acc);
 
-        // Calculate distance if active event exists
+        // Calculate distance and Ray-Casting PIP if active event exists
         if (activeEvent) {
           const dist = calculateHaversine(lat, lng, activeEvent.center_lat, activeEvent.center_lng);
           setDistanceMeters(dist);
-          const inside = dist <= activeEvent.radius_m;
+
+          let inside = false;
+          if (activeEvent.polygon_coordinates && activeEvent.polygon_coordinates.length >= 3) {
+            inside = isPointInPolygon([lat, lng], activeEvent.polygon_coordinates);
+          } else {
+            inside = dist <= (activeEvent.radius_m || 100);
+          }
           setInRange(inside);
 
           // Handle Grace Period Countdown
@@ -239,7 +275,7 @@ export default function StudentHome({ onOpenPwaNotice }) {
   const sendGraceWarningNotification = () => {
     if ('Notification' in window && Notification.permission === 'granted') {
       new Notification('TapIn Grace Period Expired!', {
-        body: 'You have been outside the event geofence radius for longer than allowed. Please re-enter or time out.',
+        body: 'You have been outside the event geofence polygon for longer than allowed. Please re-enter or time out.',
         icon: '/pwa-192x192.png'
       });
     }
@@ -472,11 +508,11 @@ export default function StudentHome({ onOpenPwaNotice }) {
               <div className="text-xs sm:text-sm font-semibold">
                 {inRange ? (
                   <span className="text-emerald-400 flex items-center gap-1">
-                    <CheckCircle className="w-4 h-4" /> In Geofence
+                    <CheckCircle className="w-4 h-4" /> In Polygon
                   </span>
                 ) : (
                   <span className="text-amber-400 flex items-center gap-1">
-                    <AlertTriangle className="w-4 h-4" /> Out of Range
+                    <AlertTriangle className="w-4 h-4" /> Outside Polygon
                   </span>
                 )}
               </div>
@@ -484,7 +520,7 @@ export default function StudentHome({ onOpenPwaNotice }) {
           </div>
         )}
 
-        {/* Live Visual Map Preview with Geofence Radius Circle Overlay */}
+        {/* Live Visual Map Preview with Polygon Geofence Overlay */}
         {activeEvent && (
           <div className="pt-2">
             <LiveGeofenceMap
@@ -503,8 +539,8 @@ export default function StudentHome({ onOpenPwaNotice }) {
             <div className="flex items-center gap-3">
               <Clock className="w-6 h-6 text-amber-400 shrink-0" />
               <div>
-                <h4 className="text-xs font-bold uppercase tracking-wider">Out of Range - Grace Period Active</h4>
-                <p className="text-[11px] text-amber-200/80">Re-enter the event perimeter before countdown expires to avoid attendance penalty.</p>
+                <h4 className="text-xs font-bold uppercase tracking-wider">Out of Bounds - Grace Period Active</h4>
+                <p className="text-[11px] text-amber-200/80">Re-enter the venue polygon boundary before countdown expires to avoid attendance penalty.</p>
               </div>
             </div>
             <div className="text-xl font-mono font-bold text-amber-400 bg-slate-950/60 px-3 py-1.5 rounded-lg border border-amber-500/30">
@@ -517,7 +553,7 @@ export default function StudentHome({ onOpenPwaNotice }) {
           <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 flex items-center gap-3">
             <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
             <div className="text-xs">
-              <span className="font-bold">Grace Period Countdown Expired!</span> You were outside the radius for over {activeEvent?.grace_minutes} mins. You may still time out, but a grace violation will be recorded.
+              <span className="font-bold">Grace Period Countdown Expired!</span> You were outside the venue polygon for over {activeEvent?.grace_minutes} mins. You may still time out, but a grace violation will be recorded.
             </div>
           </div>
         )}

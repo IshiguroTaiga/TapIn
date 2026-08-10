@@ -7,6 +7,8 @@
     "start": "node server/index.js",
     "seed": "node server/seed.js",
     "build": "cd client && npm install && npm run build",
+    "test": "node server/scripts/testGeofence.js",
+    "test:geofence": "node server/scripts/testGeofence.js",
     "eval:rule": "node server/scripts/evalSpoofDetector.js --strategy rule-based",
     "eval:ml": "node server/scripts/evalSpoofDetector.js --strategy ml-classifier",
     "generate-dataset": "node server/scripts/generateSampleDataset.js"
