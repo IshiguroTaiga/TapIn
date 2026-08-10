@@ -321,28 +321,29 @@ export default function GeofenceMapPicker({
       polygonLayerRef.current.setLatLngs(vertices);
       polylineLayerRef.current.setLatLngs([]);
 
-      // Dedicated Draggable Center Pin (Gold Star)
+      // Dedicated Draggable Center Pin (Radiant Gold Star)
       const centroidIcon = L.divIcon({
         className: 'centroid-pin',
         html: `<div style="
-          width: 34px; 
-          height: 34px; 
-          background: ${dragMode === 'center_only' ? '#f59e0b' : '#6366f1'}; 
+          width: 36px; 
+          height: 36px; 
+          background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 50%, #d97706 100%); 
           border: 3px solid #ffffff; 
           border-radius: 50%; 
-          box-shadow: 0 0 16px ${dragMode === 'center_only' ? 'rgba(245, 158, 11, 0.9)' : 'rgba(99, 102, 241, 0.9)'};
+          box-shadow: 0 0 18px rgba(245, 158, 11, 1), inset 0 0 4px rgba(255, 255, 255, 0.6);
           cursor: grab;
           display: flex;
           align-items: center;
           justify-content: center;
-          color: white;
-          font-weight: bold;
-          font-size: 14px;
+          color: #ffffff;
+          font-weight: 900;
+          font-size: 16px;
           user-select: none;
           touch-action: none;
+          text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
         ">★</div>`,
-        iconSize: [34, 34],
-        iconAnchor: [17, 17]
+        iconSize: [36, 36],
+        iconAnchor: [18, 18]
       });
 
       const centerMarker = L.marker([centerPoint.lat, centerPoint.lng], {
@@ -353,12 +354,12 @@ export default function GeofenceMapPicker({
 
       centerMarker.bindPopup(`
         <div style="font-size: 12px; font-family: system-ui; min-width: 170px;">
-          <b style="color: ${dragMode === 'center_only' ? '#f59e0b' : '#6366f1'}; font-size: 13px;">📍 Venue Center Pin</b><br/>
+          <b style="color: #f59e0b; font-size: 13px;">⭐ Venue Center Pin</b><br/>
           <span style="font-family: monospace; font-size: 11px; color: #cbd5e1;">${centerPoint.lat.toFixed(5)}, ${centerPoint.lng.toFixed(5)}</span><br/>
           <div style="margin-top: 4px; color: #94a3b8; font-size: 11px;">
             ${dragMode === 'center_only' 
               ? '✨ <b>Mode:</b> Moves <u>center point only</u> (stage/entrance).'
-              : '📦 <b>Mode:</b> Moves <u>entire building footprint</u>.'}
+              : '📦 <b>Mode:</b> Moves <u>entire building footprint</u> with border.'}
           </div>
         </div>
       `);

@@ -61,25 +61,26 @@ export default function LiveGeofenceMap({
         maxZoom: 19
       }).addTo(map);
 
-      // Event Center Pin Icon
+      // Event Center Pin Icon (Radiant Gold Star)
       const centerIcon = L.divIcon({
         className: 'center-pin',
         html: `<div style="
-          width: 24px; 
-          height: 24px; 
-          background: #4f46e5; 
-          border: 3px solid #ffffff; 
+          width: 26px; 
+          height: 26px; 
+          background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 50%, #d97706 100%); 
+          border: 2.5px solid #ffffff; 
           border-radius: 50%; 
-          box-shadow: 0 0 15px rgba(79, 70, 229, 0.9);
+          box-shadow: 0 0 16px rgba(245, 158, 11, 0.95);
           display: flex;
           align-items: center;
           justify-content: center;
           color: white;
-          font-weight: bold;
-          font-size: 11px;
+          font-weight: 900;
+          font-size: 13px;
+          text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
         ">★</div>`,
-        iconSize: [24, 24],
-        iconAnchor: [12, 12]
+        iconSize: [26, 26],
+        iconAnchor: [13, 13]
       });
 
       L.marker([centerLat, centerLng], { icon: centerIcon })
