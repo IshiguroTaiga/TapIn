@@ -35,21 +35,21 @@ export default function LiveGeofenceMap({
   const mapInstanceRef = useRef(null);
   const eventPolygonRef = useRef(null);
   const eventCircleRef = useRef(null);
+  const centerMarkerRef = useRef(null);
   const studentMarkerRef = useRef(null);
   const studentAccuracyCircleRef = useRef(null);
   const studentMarkersGroupRef = useRef(null);
 
+  // Initialize Map Once
   useEffect(() => {
-    if (!mapContainerRef.current || !event) return;
+    if (!mapContainerRef.current) return;
 
-    const polygonCoords = normalizePolygon(event.polygon_coordinates);
-    const centerLat = event.center_lat || 18.1960;
-    const centerLng = event.center_lng || 120.5927;
-
-    // Initialize Map centered at Event
     if (!mapInstanceRef.current) {
+      const defaultLat = event?.center_lat || 18.1960;
+      const defaultLng = event?.center_lng || 120.5927;
+
       const map = L.map(mapContainerRef.current, {
-        center: [centerLat, centerLng],
+        center: [defaultLat, defaultLng],
         zoom: 16,
         zoomControl: true,
         attributionControl: false
@@ -61,46 +61,94 @@ export default function LiveGeofenceMap({
         maxZoom: 19
       }).addTo(map);
 
-      // Event Center Pin Icon (Radiant Gold Star)
-      const centerIcon = L.divIcon({
-        className: 'center-pin',
-        html: `<div style="
-          width: 26px; 
-          height: 26px; 
-          background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 50%, #d97706 100%); 
-          border: 2.5px solid #ffffff; 
-          border-radius: 50%; 
-          box-shadow: 0 0 16px rgba(245, 158, 11, 0.95);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: white;
-          font-weight: 900;
-          font-size: 13px;
-          text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-        ">★</div>`,
-        iconSize: [26, 26],
-        iconAnchor: [13, 13]
-      });
+      studentMarkersGroupRef.current = L.layerGroup().addTo(map);
+      mapInstanceRef.current = map;
+    }
 
-      L.marker([centerLat, centerLng], { icon: centerIcon })
+    return () => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+        eventPolygonRef.current = null;
+        eventCircleRef.current = null;
+        centerMarkerRef.current = null;
+        studentMarkerRef.current = null;
+        studentAccuracyCircleRef.current = null;
+      }
+    };
+  }, []);
+
+  // Update Event Polygon & Centroid on Event changes
+  useEffect(() => {
+    if (!mapInstanceRef.current || !event) return;
+    const map = mapInstanceRef.current;
+
+    const polygonCoords = normalizePolygon(event.polygon_coordinates);
+    const centerLat = parseFloat(event.center_lat) || 18.1960;
+    const centerLng = parseFloat(event.center_lng) || 120.5927;
+
+    // Centroid Star Pin
+    const centerIcon = L.divIcon({
+      className: 'center-pin',
+      html: `<div style="
+        width: 24px; 
+        height: 24px; 
+        background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 50%, #d97706 100%); 
+        border: 2px solid #ffffff; 
+        border-radius: 50%; 
+        box-shadow: 0 0 14px rgba(245, 158, 11, 0.95);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: 900;
+        font-size: 12px;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+      ">★</div>`,
+      iconSize: [24, 24],
+      iconAnchor: [12, 12]
+    });
+
+    if (!centerMarkerRef.current) {
+      centerMarkerRef.current = L.marker([centerLat, centerLng], { icon: centerIcon })
         .addTo(map)
         .bindPopup(`<b>${event.name}</b><br/>Centroid: ${centerLat.toFixed(4)}, ${centerLng.toFixed(4)}<br/>Grace Period: ${event.grace_minutes}m`);
+    } else {
+      centerMarkerRef.current.setLatLng([centerLat, centerLng]);
+    }
 
-      // Draw Polygon Geofence if vertices exist
-      if (polygonCoords.length >= 3) {
-        const polygonLayer = L.polygon(polygonCoords, {
+    // Render exact Polygon Boundary
+    if (polygonCoords.length >= 3) {
+      // Remove fallback circle if previously rendered
+      if (eventCircleRef.current) {
+        map.removeLayer(eventCircleRef.current);
+        eventCircleRef.current = null;
+      }
+
+      if (!eventPolygonRef.current) {
+        eventPolygonRef.current = L.polygon(polygonCoords, {
           color: '#818cf8',
           fillColor: '#6366f1',
           fillOpacity: 0.25,
           weight: 2.5,
           dashArray: '6, 6'
         }).addTo(map);
-        eventPolygonRef.current = polygonLayer;
-        map.fitBounds(polygonLayer.getBounds().pad(0.3));
       } else {
-        // Fallback Circle
-        const radiusCircle = L.circle([centerLat, centerLng], {
+        eventPolygonRef.current.setLatLngs(polygonCoords);
+      }
+
+      if (!studentCoords) {
+        map.fitBounds(eventPolygonRef.current.getBounds().pad(0.3));
+      }
+    } else {
+      // Fallback Circle if no polygon vertices
+      if (eventPolygonRef.current) {
+        map.removeLayer(eventPolygonRef.current);
+        eventPolygonRef.current = null;
+      }
+
+      if (!eventCircleRef.current) {
+        eventCircleRef.current = L.circle([centerLat, centerLng], {
           color: '#818cf8',
           fillColor: '#6366f1',
           fillOpacity: 0.20,
@@ -108,27 +156,16 @@ export default function LiveGeofenceMap({
           dashArray: '6, 6',
           radius: event.radius_m || 100
         }).addTo(map);
-        eventCircleRef.current = radiusCircle;
+      } else {
+        eventCircleRef.current.setLatLng([centerLat, centerLng]);
+        eventCircleRef.current.setRadius(event.radius_m || 100);
       }
 
-      studentMarkersGroupRef.current = L.layerGroup().addTo(map);
-      mapInstanceRef.current = map;
-    } else {
-      // Update polygon / circle if event changes
-      if (eventPolygonRef.current) {
-        if (polygonCoords.length >= 3) {
-          eventPolygonRef.current.setLatLngs(polygonCoords);
-        }
+      if (!studentCoords) {
+        map.setView([centerLat, centerLng], 16);
       }
     }
-
-    return () => {
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
-        mapInstanceRef.current = null;
-      }
-    };
-  }, [event?.id, JSON.stringify(event?.polygon_coordinates)]);
+  }, [event?.id, event?.center_lat, event?.center_lng, JSON.stringify(event?.polygon_coordinates)]);
 
   // Update Student Location & Accuracy Circle on Map
   useEffect(() => {

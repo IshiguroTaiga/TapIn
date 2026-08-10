@@ -128,18 +128,39 @@ export default function StudentHome({ onOpenPwaNotice }) {
     return () => clearTimeout(timer);
   }, [studentId]);
 
+function normalizePolygon(poly) {
+  if (!poly) return [];
+  let raw = poly;
+  if (typeof poly === 'string') {
+    try {
+      raw = JSON.parse(poly);
+    } catch (e) {
+      return [];
+    }
+  }
+  if (!Array.isArray(raw)) return [];
+  return raw.map(p => {
+    if (Array.isArray(p) && p.length >= 2) return [parseFloat(p[0]), parseFloat(p[1])];
+    if (typeof p === 'object' && p !== null) {
+      const lat = parseFloat(p.lat !== undefined ? p.lat : p.latitude);
+      const lng = parseFloat(p.lng !== undefined ? p.lng : p.lon !== undefined ? p.lon : p.longitude);
+      if (!isNaN(lat) && !isNaN(lng)) return [lat, lng];
+    }
+    return null;
+  }).filter(Boolean);
+}
+
   // Pure Ray-Casting Point-in-Polygon check for live client-side telemetry
   const isPointInPolygon = (point, polygon) => {
-    if (!point || !polygon || polygon.length < 3) return false;
+    const poly = normalizePolygon(polygon);
+    if (!point || !poly || poly.length < 3) return false;
     const [lat, lng] = Array.isArray(point) ? point : [point.lat, point.lng];
     let inside = false;
-    const n = polygon.length;
+    const n = poly.length;
     for (let i = 0; i < n; i++) {
       const j = (i + 1) % n;
-      const p1 = Array.isArray(polygon[i]) ? polygon[i] : [polygon[i].lat, polygon[i].lng];
-      const p2 = Array.isArray(polygon[j]) ? polygon[j] : [polygon[j].lat, polygon[j].lng];
-      const [lat1, lng1] = p1;
-      const [lat2, lng2] = p2;
+      const [lat1, lng1] = poly[i];
+      const [lat2, lng2] = poly[j];
 
       // On-segment boundary check
       const minLat = Math.min(lat1, lat2) - 1e-7;
@@ -157,6 +178,31 @@ export default function StudentHome({ onOpenPwaNotice }) {
     }
     return inside;
   };
+
+  // Re-evaluate Geofence containment whenever student coordinates OR activeEvent change
+  useEffect(() => {
+    if (!coords || !activeEvent) return;
+
+    const { lat, lng } = coords;
+    const dist = calculateHaversine(lat, lng, activeEvent.center_lat, activeEvent.center_lng);
+    setDistanceMeters(dist);
+
+    const poly = normalizePolygon(activeEvent.polygon_coordinates);
+    let inside = false;
+    if (poly.length >= 3) {
+      inside = isPointInPolygon([lat, lng], poly);
+    } else {
+      inside = dist <= (activeEvent.radius_m || 100);
+    }
+    setInRange(inside);
+
+    // Handle Grace Period Countdown
+    if (!inside && !isGraceActive && !graceExpired) {
+      startGraceCountdown(activeEvent.grace_minutes * 60);
+    } else if (inside && isGraceActive) {
+      resetGraceCountdown();
+    }
+  }, [coords, activeEvent]);
 
   // Request & Watch Geolocation
   const requestLocation = () => {
@@ -176,27 +222,6 @@ export default function StudentHome({ onOpenPwaNotice }) {
 
         setCoords({ lat, lng });
         setAccuracy(acc);
-
-        // Calculate distance and Ray-Casting PIP if active event exists
-        if (activeEvent) {
-          const dist = calculateHaversine(lat, lng, activeEvent.center_lat, activeEvent.center_lng);
-          setDistanceMeters(dist);
-
-          let inside = false;
-          if (activeEvent.polygon_coordinates && activeEvent.polygon_coordinates.length >= 3) {
-            inside = isPointInPolygon([lat, lng], activeEvent.polygon_coordinates);
-          } else {
-            inside = dist <= (activeEvent.radius_m || 100);
-          }
-          setInRange(inside);
-
-          // Handle Grace Period Countdown
-          if (!inside && !isGraceActive && !graceExpired) {
-            startGraceCountdown(activeEvent.grace_minutes * 60);
-          } else if (inside && isGraceActive) {
-            resetGraceCountdown();
-          }
-        }
       },
       (err) => {
         setLocationPermission('denied');
@@ -428,8 +453,12 @@ export default function StudentHome({ onOpenPwaNotice }) {
           {/* Event Geofence Parameters */}
           <div className="mt-4 pt-4 border-t border-slate-800/80 grid grid-cols-3 gap-2 sm:gap-3 text-center">
             <div className="p-2 sm:p-2.5 rounded-xl bg-slate-900/60 border border-slate-800">
-              <span className="text-[9px] sm:text-[10px] uppercase text-slate-400 block font-medium">Radius</span>
-              <span className="text-xs sm:text-sm font-bold text-indigo-400">{activeEvent.radius_m}m</span>
+              <span className="text-[9px] sm:text-[10px] uppercase text-slate-400 block font-medium">Geofence Boundary</span>
+              <span className="text-xs sm:text-sm font-bold text-indigo-400">
+                {normalizePolygon(activeEvent.polygon_coordinates).length >= 3
+                  ? `Polygon (${normalizePolygon(activeEvent.polygon_coordinates).length} Corners)`
+                  : `${activeEvent.radius_m}m Radius`}
+              </span>
             </div>
             <div className="p-2 sm:p-2.5 rounded-xl bg-slate-900/60 border border-slate-800">
               <span className="text-[9px] sm:text-[10px] uppercase text-slate-400 block font-medium">Grace Window</span>
