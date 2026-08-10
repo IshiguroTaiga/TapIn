@@ -417,7 +417,7 @@ export default function StudentHome({ onOpenPwaNotice }) {
             </div>
             
             <button
-              onClick={fetchActiveEvent}
+              onClick={() => fetchActiveEvents(studentInfo?.college)}
               className="p-2.5 rounded-xl bg-slate-900/60 text-slate-400 hover:text-white transition-colors cursor-pointer min-w-[44px] min-h-[44px] flex items-center justify-center shrink-0"
               title="Refresh Event"
             >
