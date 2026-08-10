@@ -129,6 +129,34 @@ function generateHexagonAround(centerLat, centerLng, radiusM = 100) {
   return points;
 }
 
+function normalizePolygon(poly) {
+  if (!poly) return [];
+  let raw = poly;
+  while (typeof raw === 'string') {
+    try {
+      raw = JSON.parse(raw);
+    } catch (e) {
+      break;
+    }
+  }
+
+  if (raw && raw.type === 'Polygon' && Array.isArray(raw.coordinates) && raw.coordinates[0]) {
+    return raw.coordinates[0].map(c => [parseFloat(c[1]), parseFloat(c[0])]).filter(c => !isNaN(c[0]) && !isNaN(c[1]));
+  }
+
+  if (!Array.isArray(raw)) return [];
+
+  return raw.map(p => {
+    if (Array.isArray(p) && p.length >= 2) return [parseFloat(p[0]), parseFloat(p[1])];
+    if (typeof p === 'object' && p !== null) {
+      const lat = parseFloat(p.lat !== undefined ? p.lat : p.latitude);
+      const lng = parseFloat(p.lng !== undefined ? p.lng : p.lon !== undefined ? p.lon : p.longitude);
+      if (!isNaN(lat) && !isNaN(lng)) return [lat, lng];
+    }
+    return null;
+  }).filter(Boolean);
+}
+
 export default function GeofenceMapPicker({
   polygon = [],
   centerLat,
@@ -154,8 +182,9 @@ export default function GeofenceMapPicker({
 
   // Local polygon state
   const [vertices, setVertices] = useState(() => {
-    if (Array.isArray(polygon) && polygon.length >= 3) {
-      return polygon.map(p => Array.isArray(p) ? [parseFloat(p[0]), parseFloat(p[1])] : [parseFloat(p.lat), parseFloat(p.lng)]);
+    const norm = normalizePolygon(polygon);
+    if (norm.length >= 3) {
+      return norm;
     }
     const cLat = centerLat ? parseFloat(centerLat) : ILOCOS_NORTE_CENTER[0];
     const cLng = centerLng ? parseFloat(centerLng) : ILOCOS_NORTE_CENTER[1];
@@ -167,9 +196,9 @@ export default function GeofenceMapPicker({
     if (centerLat && centerLng) {
       return { lat: parseFloat(centerLat), lng: parseFloat(centerLng) };
     }
-    if (Array.isArray(polygon) && polygon.length >= 3) {
-      const normalized = polygon.map(p => Array.isArray(p) ? [parseFloat(p[0]), parseFloat(p[1])] : [parseFloat(p.lat), parseFloat(p.lng)]);
-      return calculateGeometricCentroid(normalized);
+    const norm = normalizePolygon(polygon);
+    if (norm.length >= 3) {
+      return calculateGeometricCentroid(norm);
     }
     return { lat: ILOCOS_NORTE_CENTER[0], lng: ILOCOS_NORTE_CENTER[1] };
   });
@@ -178,23 +207,23 @@ export default function GeofenceMapPicker({
   useEffect(() => {
     if (centerLat && centerLng) {
       const c = { lat: parseFloat(centerLat), lng: parseFloat(centerLng) };
-      const hash = JSON.stringify({ c });
-      if (lastEmittedHashRef.current !== hash) {
-        setCenterPoint(c);
-      }
+      setCenterPoint(c);
     }
   }, [centerLat, centerLng]);
 
-  // Sync external polygon prop updates ONLY if external
+  // Sync external polygon prop updates
   useEffect(() => {
-    if (Array.isArray(polygon) && polygon.length >= 3) {
-      const normalized = polygon.map(p => Array.isArray(p) ? [parseFloat(p[0]), parseFloat(p[1])] : [parseFloat(p.lat), parseFloat(p.lng)]);
-      const hash = JSON.stringify(normalized);
+    const norm = normalizePolygon(polygon);
+    if (norm.length >= 3) {
+      const hash = JSON.stringify(norm);
       if (lastEmittedHashRef.current !== hash) {
-        setVertices(normalized);
+        setVertices(norm);
+        if (polygonLayerRef.current) {
+          polygonLayerRef.current.setLatLngs(norm);
+        }
       }
     }
-  }, [polygon]);
+  }, [JSON.stringify(polygon)]);
 
   // Emit changes to parent safely with hash recording
   const emitChanges = useCallback((newVertices, newCenter) => {
@@ -649,24 +678,36 @@ export default function GeofenceMapPicker({
     const center = centerPoint;
     const lShape = generateLShapeAround(center.lat, center.lng, radiusMeters || 120);
     emitChanges(lShape, center);
+    if (mapInstanceRef.current && lShape.length >= 3) {
+      mapInstanceRef.current.fitBounds(L.polygon(lShape).getBounds().pad(0.3));
+    }
   };
 
   const handleSpawnUShape = () => {
     const center = centerPoint;
     const uShape = generateUShapeAround(center.lat, center.lng, radiusMeters || 120);
     emitChanges(uShape, center);
+    if (mapInstanceRef.current && uShape.length >= 3) {
+      mapInstanceRef.current.fitBounds(L.polygon(uShape).getBounds().pad(0.3));
+    }
   };
 
   const handleSpawnBox = () => {
     const center = centerPoint;
     const box = generateBoxAround(center.lat, center.lng, radiusMeters || 100);
     emitChanges(box, center);
+    if (mapInstanceRef.current && box.length >= 3) {
+      mapInstanceRef.current.fitBounds(L.polygon(box).getBounds().pad(0.3));
+    }
   };
 
   const handleSpawnHexagon = () => {
     const center = centerPoint;
     const hex = generateHexagonAround(center.lat, center.lng, radiusMeters || 100);
     emitChanges(hex, center);
+    if (mapInstanceRef.current && hex.length >= 3) {
+      mapInstanceRef.current.fitBounds(L.polygon(hex).getBounds().pad(0.3));
+    }
   };
 
   const handleClearPolygon = () => {
