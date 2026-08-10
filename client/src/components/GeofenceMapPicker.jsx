@@ -1,15 +1,22 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import L from 'leaflet';
 import {
   Navigation,
   MapPin,
   RotateCcw,
+  RotateCw,
   Trash2,
   PlusCircle,
   CheckCircle2,
   Maximize2,
+  Minimize2,
   Compass,
-  Layers
+  Layers,
+  ZoomIn,
+  ZoomOut,
+  Move,
+  Sparkles,
+  HelpCircle
 } from 'lucide-react';
 
 // Ilocos Norte Geographic Bounding Constraints
@@ -19,7 +26,7 @@ const ILOCOS_NORTE_BOUNDS = [
   [18.70, 121.10]  // North-East
 ];
 
-// Campus Venue Presets for fast setup
+// Campus Venue Presets
 const PRESETS = {
   SUNKEN_GARDEN: [
     [18.1960, 120.5920],
@@ -70,6 +77,70 @@ function calculateMaxRadius(points, centroid) {
   return Math.max(30, Math.ceil(maxDist));
 }
 
+// Generate Shape Footprint Templates centered on map
+function generateLShapeAround(centerLat, centerLng, spanM = 120) {
+  const R = 6371000;
+  const rad = spanM / 2;
+  const cosLat = Math.cos(centerLat * (Math.PI / 180));
+  
+  // 6 vertices of an L shape
+  const offsets = [
+    [-rad, -rad],       // Bottom-left
+    [+rad, -rad],       // Bottom-right
+    [+rad, 0],          // Right elbow
+    [0, 0],             // Inner corner
+    [0, +rad],          // Top inner
+    [-rad, +rad]        // Top-left
+  ];
+
+  return offsets.map(([dy, dx]) => {
+    const lat = centerLat + (dy / R) * (180 / Math.PI);
+    const lng = centerLng + (dx / (R * cosLat)) * (180 / Math.PI);
+    return [Math.round(lat * 100000) / 100000, Math.round(lng * 100000) / 100000];
+  });
+}
+
+function generateUShapeAround(centerLat, centerLng, spanM = 120) {
+  const R = 6371000;
+  const rad = spanM / 2;
+  const cosLat = Math.cos(centerLat * (Math.PI / 180));
+  
+  // 8 vertices of a U-shape courtyard
+  const offsets = [
+    [-rad, -rad],
+    [+rad, -rad],
+    [+rad, +rad],
+    [+rad * 0.4, +rad],
+    [+rad * 0.4, -rad * 0.2],
+    [-rad * 0.4, -rad * 0.2],
+    [-rad * 0.4, +rad],
+    [-rad, +rad]
+  ];
+
+  return offsets.map(([dy, dx]) => {
+    const lat = centerLat + (dy / R) * (180 / Math.PI);
+    const lng = centerLng + (dx / (R * cosLat)) * (180 / Math.PI);
+    return [Math.round(lat * 100000) / 100000, Math.round(lng * 100000) / 100000];
+  });
+}
+
+function generateBoxAround(centerLat, centerLng, spanM = 100) {
+  const R = 6371000;
+  const rad = spanM / 2;
+  const cosLat = Math.cos(centerLat * (Math.PI / 180));
+  const offsets = [
+    [-rad, -rad],
+    [+rad, -rad],
+    [+rad, +rad],
+    [-rad, +rad]
+  ];
+  return offsets.map(([dy, dx]) => {
+    const lat = centerLat + (dy / R) * (180 / Math.PI);
+    const lng = centerLng + (dx / (R * cosLat)) * (180 / Math.PI);
+    return [Math.round(lat * 100000) / 100000, Math.round(lng * 100000) / 100000];
+  });
+}
+
 function generateHexagonAround(centerLat, centerLng, radiusM = 100) {
   const points = [];
   const R = 6371000;
@@ -96,7 +167,12 @@ export default function GeofenceMapPicker({
   const polygonLayerRef = useRef(null);
   const polylineLayerRef = useRef(null);
   const vertexMarkersGroupRef = useRef(null);
+  const midpointMarkersGroupRef = useRef(null);
   const centroidMarkerRef = useRef(null);
+
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [drawingMode, setDrawingMode] = useState(true); // Click to add vertex
+  const [showHelp, setShowHelp] = useState(false);
 
   // Local polygon state for responsive drawing
   const [vertices, setVertices] = useState(() => {
@@ -116,17 +192,17 @@ export default function GeofenceMapPicker({
     }
   }, [polygon]);
 
-  // Notify parent of updates
-  const updateVertices = (newVertices) => {
+  // Central update notifier
+  const updateVertices = useCallback((newVertices) => {
     setVertices(newVertices);
     if (onChangePolygon) {
       const centroid = calculateCentroid(newVertices);
       const maxRadius = calculateMaxRadius(newVertices, centroid);
       onChangePolygon(newVertices, centroid, maxRadius);
     }
-  };
+  }, [onChangePolygon]);
 
-  // Initialize Map
+  // Initialize Leaflet Map
   useEffect(() => {
     if (!mapContainerRef.current) return;
 
@@ -140,46 +216,45 @@ export default function GeofenceMapPicker({
         maxZoom: 19,
         maxBounds: ILOCOS_NORTE_BOUNDS,
         maxBoundsViscosity: 0.8,
-        attributionControl: false
+        attributionControl: false,
+        tap: true,
+        touchZoom: true
       });
 
-      // Dark CartoDB Tile Layer for sleek dark mode
+      // Dark CartoDB Tile Layer
       L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
         subdomains: 'abcd',
         maxZoom: 19
       }).addTo(map);
 
-      // Layer groups for dynamic redraws
+      // Layers for dynamic shapes
       polygonLayerRef.current = L.polygon([], {
         color: '#818cf8',
         fillColor: '#6366f1',
-        fillOpacity: 0.25,
-        weight: 2.5,
+        fillOpacity: 0.28,
+        weight: 3,
         dashArray: '6, 6'
       }).addTo(map);
 
       polylineLayerRef.current = L.polyline([], {
         color: '#818cf8',
-        weight: 2,
+        weight: 2.5,
         dashArray: '4, 4'
       }).addTo(map);
 
+      midpointMarkersGroupRef.current = L.layerGroup().addTo(map);
       vertexMarkersGroupRef.current = L.layerGroup().addTo(map);
       centroidMarkerRef.current = L.layerGroup().addTo(map);
 
       mapInstanceRef.current = map;
 
-      // Click to add vertex
+      // Click to add vertex when drawing mode is active
       map.on('click', (e) => {
         const { lat, lng } = e.latlng;
         const newPt = [Math.round(lat * 100000) / 100000, Math.round(lng * 100000) / 100000];
         setVertices(prev => {
           const next = [...prev, newPt];
-          if (onChangePolygon) {
-            const centroid = calculateCentroid(next);
-            const maxRadius = calculateMaxRadius(next, centroid);
-            onChangePolygon(next, centroid, maxRadius);
-          }
+          updateVertices(next);
           return next;
         });
       });
@@ -191,48 +266,174 @@ export default function GeofenceMapPicker({
         mapInstanceRef.current = null;
       }
     };
-  }, []);
+  }, [updateVertices]);
 
-  // Synchronize Leaflet layers when `vertices` changes
+  // Invalidate map size when fullscreen toggles
+  useEffect(() => {
+    if (mapInstanceRef.current) {
+      setTimeout(() => {
+        mapInstanceRef.current.invalidateSize();
+      }, 200);
+    }
+  }, [isFullscreen]);
+
+  // Synchronize Leaflet Layers & Draggable Handles
   useEffect(() => {
     if (!mapInstanceRef.current || !vertexMarkersGroupRef.current) return;
 
-    // Clear previous handles
+    // Clear previous layers
     vertexMarkersGroupRef.current.clearLayers();
+    midpointMarkersGroupRef.current.clearLayers();
     centroidMarkerRef.current.clearLayers();
 
-    if (vertices.length >= 3) {
-      // Draw closed Polygon
+    const n = vertices.length;
+
+    if (n >= 3) {
+      // 1. Draw Closed Polygon
       polygonLayerRef.current.setLatLngs(vertices);
       polylineLayerRef.current.setLatLngs([]);
 
-      // Draw Centroid Pin
+      // 2. Draw Draggable Centroid Pin (Drags entire shape at once!)
       const centroid = calculateCentroid(vertices);
       const centroidIcon = L.divIcon({
         className: 'centroid-pin',
         html: `<div style="
-          width: 16px; 
-          height: 16px; 
+          width: 32px; 
+          height: 32px; 
           background: #4f46e5; 
-          border: 2px solid #ffffff; 
+          border: 2.5px solid #ffffff; 
           border-radius: 50%; 
-          box-shadow: 0 0 10px rgba(99, 102, 241, 0.9);
+          box-shadow: 0 0 15px rgba(99, 102, 241, 1);
+          cursor: move;
           display: flex;
           align-items: center;
           justify-content: center;
           color: white;
           font-weight: bold;
-          font-size: 9px;
+          font-size: 13px;
+          touch-action: none;
         ">★</div>`,
-        iconSize: [16, 16],
-        iconAnchor: [8, 8]
+        iconSize: [32, 32],
+        iconAnchor: [16, 16]
       });
-      L.marker([centroid.lat, centroid.lng], { icon: centroidIcon })
-        .bindPopup(`<b>Centroid</b><br/>${centroid.lat.toFixed(5)}, ${centroid.lng.toFixed(5)}`)
-        .addTo(centroidMarkerRef.current);
 
-    } else if (vertices.length > 0) {
-      // Draw open polyline for in-progress drawing
+      const centerMarker = L.marker([centroid.lat, centroid.lng], {
+        draggable: true,
+        icon: centroidIcon
+      });
+
+      centerMarker.bindPopup(`
+        <div style="font-size: 12px; font-family: system-ui;">
+          <b style="color: #6366f1;">📍 Venue Centroid</b><br/>
+          <span style="color: #64748b;">Drag this star to move the <b>entire building shape</b> at once!</span>
+        </div>
+      `);
+
+      let dragStartPos = null;
+      let initialVerticesOnDrag = null;
+
+      centerMarker.on('dragstart', (e) => {
+        dragStartPos = e.target.getLatLng();
+        initialVerticesOnDrag = [...vertices];
+      });
+
+      centerMarker.on('drag', (e) => {
+        if (!dragStartPos || !initialVerticesOnDrag) return;
+        const currentPos = e.target.getLatLng();
+        const dLat = currentPos.lat - dragStartPos.lat;
+        const dLng = currentPos.lng - dragStartPos.lng;
+
+        const shifted = initialVerticesOnDrag.map(([lat, lng]) => [
+          Math.round((lat + dLat) * 100000) / 100000,
+          Math.round((lng + dLng) * 100000) / 100000
+        ]);
+
+        if (polygonLayerRef.current) {
+          polygonLayerRef.current.setLatLngs(shifted);
+        }
+      });
+
+      centerMarker.on('dragend', (e) => {
+        if (!dragStartPos || !initialVerticesOnDrag) return;
+        const currentPos = e.target.getLatLng();
+        const dLat = currentPos.lat - dragStartPos.lat;
+        const dLng = currentPos.lng - dragStartPos.lng;
+
+        const shifted = initialVerticesOnDrag.map(([lat, lng]) => [
+          Math.round((lat + dLat) * 100000) / 100000,
+          Math.round((lng + dLng) * 100000) / 100000
+        ]);
+
+        updateVertices(shifted);
+        dragStartPos = null;
+        initialVerticesOnDrag = null;
+      });
+
+      centroidMarkerRef.current.addLayer(centerMarker);
+
+      // 3. Midpoint '+' Handles for splitting edges (1-click create L-shape indent)
+      for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n;
+        const [lat1, lng1] = vertices[i];
+        const [lat2, lng2] = vertices[j];
+        const midLat = (lat1 + lat2) / 2;
+        const midLng = (lng1 + lng2) / 2;
+
+        const midIcon = L.divIcon({
+          className: 'midpoint-handle',
+          html: `<div style="
+            width: 20px; 
+            height: 20px; 
+            background: rgba(99, 102, 241, 0.85); 
+            border: 2px dashed #ffffff; 
+            border-radius: 50%; 
+            box-shadow: 0 0 8px rgba(99, 102, 241, 0.6);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 11px;
+            touch-action: none;
+          ">+</div>`,
+          iconSize: [20, 20],
+          iconAnchor: [10, 10]
+        });
+
+        const midMarker = L.marker([midLat, midLng], {
+          draggable: true,
+          icon: midIcon
+        });
+
+        midMarker.bindPopup(`
+          <div style="font-size: 11px;">
+            <b>Insert Corner Point</b><br/>
+            Drag or click to split this edge and shape building.
+          </div>
+        `);
+
+        // Click on '+' splits edge
+        midMarker.on('click', () => {
+          const insertPt = [Math.round(midLat * 100000) / 100000, Math.round(midLng * 100000) / 100000];
+          const next = [...vertices];
+          next.splice(i + 1, 0, insertPt);
+          updateVertices(next);
+        });
+
+        // Drag '+' pulls out a new corner in real time
+        midMarker.on('dragend', (e) => {
+          const newPos = e.target.getLatLng();
+          const insertPt = [Math.round(newPos.lat * 100000) / 100000, Math.round(newPos.lng * 100000) / 100000];
+          const next = [...vertices];
+          next.splice(i + 1, 0, insertPt);
+          updateVertices(next);
+        });
+
+        midpointMarkersGroupRef.current.addLayer(midMarker);
+      }
+
+    } else if (n > 0) {
       polygonLayerRef.current.setLatLngs([]);
       polylineLayerRef.current.setLatLngs(vertices);
     } else {
@@ -240,75 +441,164 @@ export default function GeofenceMapPicker({
       polylineLayerRef.current.setLatLngs([]);
     }
 
-    // Place draggable vertex handles
+    // 4. Place Touch-Friendly Draggable Vertex Handles (#1, #2, #3...)
     vertices.forEach(([lat, lng], idx) => {
       const vertexIcon = L.divIcon({
         className: 'vertex-handle',
         html: `<div style="
-          width: 24px; 
-          height: 24px; 
+          width: 30px; 
+          height: 30px; 
           background: ${idx === 0 ? '#10b981' : '#6366f1'}; 
-          border: 2px solid #ffffff; 
+          border: 2.5px solid #ffffff; 
           border-radius: 50%; 
-          box-shadow: 0 0 12px rgba(99, 102, 241, 0.9);
+          box-shadow: 0 0 14px rgba(99, 102, 241, 0.95);
           cursor: grab;
           display: flex;
           align-items: center;
           justify-content: center;
           color: white;
           font-weight: bold;
-          font-size: 11px;
+          font-size: 12px;
+          touch-action: none;
         ">${idx + 1}</div>`,
-        iconSize: [24, 24],
-        iconAnchor: [12, 12]
+        iconSize: [30, 30],
+        iconAnchor: [15, 15]
       });
 
       const marker = L.marker([lat, lng], {
         draggable: true,
-        icon: vertexIcon
+        icon: vertexIcon,
+        autoPan: true
       });
 
-      marker.bindPopup(`
-        <div style="font-size: 11px;">
-          <b>Vertex #${idx + 1}</b><br/>
-          ${lat.toFixed(5)}, ${lng.toFixed(5)}<br/>
-          <span style="color: #94a3b8;">Drag to reshape geofence</span>
-        </div>
-      `);
+      const popupContent = document.createElement('div');
+      popupContent.style.fontSize = '12px';
+      popupContent.innerHTML = `
+        <b>Corner #${idx + 1}</b><br/>
+        ${lat.toFixed(5)}, ${lng.toFixed(5)}<br/>
+        <button id="del-btn-${idx}" style="
+          margin-top: 6px; 
+          padding: 4px 8px; 
+          background: #ef4444; 
+          color: white; 
+          border: none; 
+          border-radius: 6px; 
+          font-size: 11px; 
+          font-weight: bold; 
+          cursor: pointer;
+        ">🗑️ Delete Corner</button>
+      `;
+
+      marker.bindPopup(popupContent);
+
+      marker.on('popupopen', () => {
+        const btn = document.getElementById(`del-btn-${idx}`);
+        if (btn) {
+          btn.onclick = () => {
+            if (vertices.length <= 3) {
+              alert('A polygon boundary requires at least 3 vertices.');
+              return;
+            }
+            const next = vertices.filter((_, i) => i !== idx);
+            updateVertices(next);
+          };
+        }
+      });
 
       marker.on('drag', (e) => {
         const newPos = e.target.getLatLng();
-        setVertices(prev => {
-          const updated = [...prev];
-          updated[idx] = [
-            Math.round(newPos.lat * 100000) / 100000,
-            Math.round(newPos.lng * 100000) / 100000
-          ];
-          if (polygonLayerRef.current && updated.length >= 3) {
-            polygonLayerRef.current.setLatLngs(updated);
-          }
-          return updated;
-        });
+        const updated = [...vertices];
+        updated[idx] = [
+          Math.round(newPos.lat * 100000) / 100000,
+          Math.round(newPos.lng * 100000) / 100000
+        ];
+        if (polygonLayerRef.current && updated.length >= 3) {
+          polygonLayerRef.current.setLatLngs(updated);
+        }
       });
 
       marker.on('dragend', (e) => {
         const newPos = e.target.getLatLng();
-        setVertices(prev => {
-          const updated = [...prev];
-          updated[idx] = [
-            Math.round(newPos.lat * 100000) / 100000,
-            Math.round(newPos.lng * 100000) / 100000
-          ];
-          updateVertices(updated);
-          return updated;
-        });
+        const updated = [...vertices];
+        updated[idx] = [
+          Math.round(newPos.lat * 100000) / 100000,
+          Math.round(newPos.lng * 100000) / 100000
+        ];
+        updateVertices(updated);
       });
 
       vertexMarkersGroupRef.current.addLayer(marker);
     });
-  }, [vertices]);
+  }, [vertices, updateVertices]);
 
-  // Handlers
+  // Transform Actions: Scale Shape
+  const handleScaleShape = (factor) => {
+    if (vertices.length < 3) return;
+    const centroid = calculateCentroid(vertices);
+    const scaled = vertices.map(([lat, lng]) => [
+      Math.round((centroid.lat + factor * (lat - centroid.lat)) * 100000) / 100000,
+      Math.round((centroid.lng + factor * (lng - centroid.lng)) * 100000) / 100000
+    ]);
+    updateVertices(scaled);
+  };
+
+  // Transform Actions: Rotate Shape (15 degrees)
+  const handleRotateShape = (deg) => {
+    if (vertices.length < 3) return;
+    const centroid = calculateCentroid(vertices);
+    const rad = (deg * Math.PI) / 180;
+    const cosLat = Math.cos(centroid.lat * (Math.PI / 180));
+
+    const rotated = vertices.map(([lat, lng]) => {
+      const dy = lat - centroid.lat;
+      const dx = (lng - centroid.lng) * cosLat;
+      const dxRot = dx * Math.cos(rad) - dy * Math.sin(rad);
+      const dyRot = dx * Math.sin(rad) + dy * Math.cos(rad);
+      return [
+        Math.round((centroid.lat + dyRot) * 100000) / 100000,
+        Math.round((centroid.lng + dxRot / cosLat) * 100000) / 100000
+      ];
+    });
+    updateVertices(rotated);
+  };
+
+  // Footprint Builders
+  const handleSpawnLShape = () => {
+    const center = mapInstanceRef.current ? mapInstanceRef.current.getCenter() : { lat: 18.1960, lng: 120.5927 };
+    const lShape = generateLShapeAround(center.lat, center.lng, radiusMeters || 120);
+    updateVertices(lShape);
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.fitBounds(L.latLngBounds(lShape).pad(0.3));
+    }
+  };
+
+  const handleSpawnUShape = () => {
+    const center = mapInstanceRef.current ? mapInstanceRef.current.getCenter() : { lat: 18.1960, lng: 120.5927 };
+    const uShape = generateUShapeAround(center.lat, center.lng, radiusMeters || 120);
+    updateVertices(uShape);
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.fitBounds(L.latLngBounds(uShape).pad(0.3));
+    }
+  };
+
+  const handleSpawnBox = () => {
+    const center = mapInstanceRef.current ? mapInstanceRef.current.getCenter() : { lat: 18.1960, lng: 120.5927 };
+    const box = generateBoxAround(center.lat, center.lng, radiusMeters || 100);
+    updateVertices(box);
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.fitBounds(L.latLngBounds(box).pad(0.3));
+    }
+  };
+
+  const handleSpawnHexagon = () => {
+    const center = mapInstanceRef.current ? mapInstanceRef.current.getCenter() : { lat: 18.1960, lng: 120.5927 };
+    const hex = generateHexagonAround(center.lat, center.lng, radiusMeters || 100);
+    updateVertices(hex);
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.fitBounds(L.latLngBounds(hex).pad(0.3));
+    }
+  };
+
   const handleUndoVertex = () => {
     if (vertices.length === 0) return;
     const next = vertices.slice(0, -1);
@@ -317,24 +607,6 @@ export default function GeofenceMapPicker({
 
   const handleClearPolygon = () => {
     updateVertices([]);
-  };
-
-  const handleApplyPreset = (presetKey) => {
-    if (PRESETS[presetKey]) {
-      const shape = PRESETS[presetKey];
-      updateVertices(shape);
-      if (mapInstanceRef.current) {
-        const bounds = L.latLngBounds(shape);
-        mapInstanceRef.current.fitBounds(bounds.pad(0.3));
-      }
-    }
-  };
-
-  const handleGenerateHexagon = () => {
-    if (!mapInstanceRef.current) return;
-    const center = mapInstanceRef.current.getCenter();
-    const hex = generateHexagonAround(center.lat, center.lng, radiusMeters || 120);
-    updateVertices(hex);
   };
 
   const handlePickCurrentLocation = () => {
@@ -352,8 +624,8 @@ export default function GeofenceMapPicker({
           mapInstanceRef.current.setView([lat, lng], 17);
         }
 
-        const hex = generateHexagonAround(lat, lng, radiusMeters || 100);
-        updateVertices(hex);
+        const lShape = generateLShapeAround(lat, lng, radiusMeters || 100);
+        updateVertices(lShape);
       },
       (err) => {
         alert('Could not retrieve current location: ' + err.message);
@@ -367,107 +639,192 @@ export default function GeofenceMapPicker({
 
   return (
     <div className="space-y-3">
-      {/* Top Header & Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-200">
-          <MapPin className="w-4 h-4 text-indigo-400" />
-          <span>Interactive Polygon Geofence Editor</span>
-          <span className="px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-mono text-[10px]">
-            {vertices.length} {vertices.length === 1 ? 'Vertex' : 'Vertices'}
-          </span>
+      
+      {/* Primary Toolbar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 rounded-lg bg-indigo-500/20 text-indigo-400">
+            <MapPin className="w-4 h-4" />
+          </div>
+          <div>
+            <span className="text-xs font-bold text-white block">Interactive Geofence Canvas</span>
+            <span className="text-[10px] text-slate-400 font-mono">
+              {vertices.length} {vertices.length === 1 ? 'Corner' : 'Corners'} • Centroid: {centroid.lat.toFixed(4)}, {centroid.lng.toFixed(4)}
+            </span>
+          </div>
         </div>
 
-        {/* Toolbar Buttons */}
+        {/* Global Controls */}
         <div className="flex items-center gap-1.5 flex-wrap">
           <button
             type="button"
             onClick={handlePickCurrentLocation}
-            className="px-2.5 py-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-[11px] font-medium flex items-center gap-1 transition-colors cursor-pointer"
-            title="Place shape around your device GPS"
+            className="px-2.5 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-[11px] font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+            title="Snap to device GPS"
           >
             <Navigation className="w-3.5 h-3.5" />
-            <span>My Location</span>
+            <span>My GPS</span>
           </button>
 
           <button
             type="button"
-            onClick={handleGenerateHexagon}
-            className="px-2.5 py-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 text-[11px] font-medium flex items-center gap-1 transition-colors cursor-pointer"
-            title="Generate regular hexagon centered on map"
+            onClick={() => setIsFullscreen(!isFullscreen)}
+            className="px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 text-[11px] font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+            title={isFullscreen ? 'Collapse Canvas' : 'Expand Fullscreen Canvas'}
           >
-            <Layers className="w-3.5 h-3.5" />
-            <span>Hexagon</span>
+            {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5 text-indigo-400" />}
+            <span>{isFullscreen ? 'Collapse' : 'Expand'}</span>
           </button>
 
           <button
             type="button"
-            onClick={handleUndoVertex}
-            disabled={vertices.length === 0}
-            className="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 disabled:opacity-40 text-[11px] font-medium flex items-center gap-1 transition-colors cursor-pointer"
-            title="Undo last vertex"
+            onClick={() => setShowHelp(!showHelp)}
+            className="p-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800 transition-colors"
+            title="Toggle Guide"
+          >
+            <HelpCircle className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Building Footprint Templates Bar */}
+      <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between flex-wrap gap-2 text-xs">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex items-center gap-1">
+            <Sparkles className="w-3 h-3 text-indigo-400" />
+            Templates:
+          </span>
+          <button
+            type="button"
+            onClick={handleSpawnLShape}
+            className="px-2.5 py-1 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 font-bold text-[11px] cursor-pointer"
+            title="Spawn 6-point L-Shaped Building footprint"
+          >
+            🏛️ L-Shape (6 pts)
+          </button>
+          <button
+            type="button"
+            onClick={handleSpawnUShape}
+            className="px-2.5 py-1 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 font-bold text-[11px] cursor-pointer"
+            title="Spawn 8-point U-Shaped Courtyard footprint"
+          >
+            🏛️ U-Shape (8 pts)
+          </button>
+          <button
+            type="button"
+            onClick={handleSpawnBox}
+            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 font-bold text-[11px] cursor-pointer"
+          >
+            Square Box (4 pts)
+          </button>
+          <button
+            type="button"
+            onClick={handleSpawnHexagon}
+            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 font-bold text-[11px] cursor-pointer"
+          >
+            Hexagon (6 pts)
+          </button>
+        </div>
+
+        {/* Quick Transform Controls (Scale & Rotate) */}
+        <div className="flex items-center gap-1 flex-wrap">
+          <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Transform:</span>
+          
+          <button
+            type="button"
+            onClick={() => handleScaleShape(1.1)}
+            disabled={vertices.length < 3}
+            className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-[10px] font-bold disabled:opacity-40"
+            title="Scale larger (+10%)"
+          >
+            Scale +10%
+          </button>
+          <button
+            type="button"
+            onClick={() => handleScaleShape(0.9)}
+            disabled={vertices.length < 3}
+            className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-[10px] font-bold disabled:opacity-40"
+            title="Scale smaller (-10%)"
+          >
+            Scale -10%
+          </button>
+          <button
+            type="button"
+            onClick={() => handleRotateShape(-15)}
+            disabled={vertices.length < 3}
+            className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 disabled:opacity-40"
+            title="Rotate 15° Left"
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            <span>Undo</span>
           </button>
-
+          <button
+            type="button"
+            onClick={() => handleRotateShape(15)}
+            disabled={vertices.length < 3}
+            className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 disabled:opacity-40"
+            title="Rotate 15° Right"
+          >
+            <RotateCw className="w-3.5 h-3.5" />
+          </button>
           <button
             type="button"
             onClick={handleClearPolygon}
             disabled={vertices.length === 0}
-            className="px-2.5 py-1.5 rounded-lg bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 disabled:opacity-40 text-[11px] font-medium flex items-center gap-1 transition-colors cursor-pointer"
-            title="Clear all vertices"
+            className="p-1 rounded-lg bg-rose-600/20 hover:bg-rose-600/30 text-rose-400 border border-rose-500/30 disabled:opacity-40"
+            title="Clear all"
           >
             <Trash2 className="w-3.5 h-3.5" />
-            <span>Clear</span>
           </button>
         </div>
       </div>
 
-      {/* Instructions & Preset Badges */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between text-[11px] text-slate-400 gap-2 bg-slate-900/40 p-2 rounded-xl border border-slate-800">
-        <div>
-          💡 <strong className="text-slate-300">Click map</strong> to place boundary vertices. <strong className="text-slate-300">Drag numbered pins</strong> to reshape venue.
+      {/* Guide Banner */}
+      {showHelp && (
+        <div className="p-3 rounded-xl bg-indigo-950/40 border border-indigo-500/30 text-[11px] text-slate-300 space-y-1 animate-in fade-in">
+          <div className="font-bold text-indigo-300 flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5" /> Fluid Boundary Customization Guide:
+          </div>
+          <ul className="list-disc pl-4 space-y-0.5 text-slate-400">
+            <li><strong className="text-white">Move Whole Building:</strong> Drag the center purple star (★) to move all corners together.</li>
+            <li><strong className="text-white">Carve In-Between Corners:</strong> Click or drag any dashed <strong className="text-indigo-400">(+) midpoint handle</strong> along any edge to split and create new corners (e.g. turning a rectangle into an L-shape).</li>
+            <li><strong className="text-white">Drag Corners:</strong> Drag any numbered pin (#1, #2, ...) to adjust building walls.</li>
+            <li><strong className="text-white">Delete Corner:</strong> Tap any numbered pin and click "🗑️ Delete Corner" in the popup.</li>
+            <li><strong className="text-white">Rotate / Scale:</strong> Use the transform buttons above to align with angled campus buildings.</li>
+          </ul>
         </div>
-        <div className="flex items-center gap-1.5 shrink-0">
-          <span className="text-slate-500 text-[10px] uppercase font-bold">Presets:</span>
-          <button
-            type="button"
-            onClick={() => handleApplyPreset('SUNKEN_GARDEN')}
-            className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-indigo-300 text-[10px] border border-slate-700 cursor-pointer"
-          >
-            MMSU Quad
-          </button>
-          <button
-            type="button"
-            onClick={() => handleApplyPreset('TEATRO_ILOCANDIA')}
-            className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-purple-300 text-[10px] border border-slate-700 cursor-pointer"
-          >
-            Teatro Oval
-          </button>
+      )}
+
+      {/* Leaflet Map Canvas */}
+      <div className="relative">
+        <div
+          ref={mapContainerRef}
+          style={{ height: isFullscreen ? '500px' : '300px' }}
+          className="w-full rounded-2xl border border-slate-800 shadow-2xl z-10 overflow-hidden transition-all duration-300"
+        />
+
+        {/* Floating Quick Action Tip Overlay */}
+        <div className="absolute bottom-2 left-2 z-20 glass-panel px-2.5 py-1 rounded-lg border border-slate-700/80 text-[10px] text-slate-300 backdrop-blur-md flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span>Click anywhere to add corner • Drag ★ star to move whole shape</span>
         </div>
       </div>
 
-      {/* Leaflet Map Container */}
-      <div
-        ref={mapContainerRef}
-        className="w-full h-72 rounded-xl border border-slate-800 shadow-inner z-10 overflow-hidden"
-      />
-
-      {/* Calculated Polygon Geometry Statistics */}
+      {/* Statistics Strip */}
       <div className="grid grid-cols-3 gap-2 text-center text-xs bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
         <div>
-          <span className="text-[10px] text-slate-500 uppercase block font-medium">Vertices</span>
-          <span className="font-bold text-white font-mono">{vertices.length} points</span>
+          <span className="text-[10px] text-slate-500 uppercase block font-medium">Boundary Shape</span>
+          <span className="font-bold text-white font-mono">{vertices.length} Vertices (Closed)</span>
         </div>
         <div>
-          <span className="text-[10px] text-slate-500 uppercase block font-medium">Centroid Coords</span>
+          <span className="text-[10px] text-slate-500 uppercase block font-medium">Venue Centroid</span>
           <span className="font-mono text-indigo-300 text-[11px]">{centroid.lat.toFixed(4)}, {centroid.lng.toFixed(4)}</span>
         </div>
         <div>
-          <span className="text-[10px] text-slate-500 uppercase block font-medium">Bounding Radius</span>
-          <span className="font-bold text-purple-400 font-mono">~{maxRadius}m</span>
+          <span className="text-[10px] text-slate-500 uppercase block font-medium">Bounding Sphere</span>
+          <span className="font-bold text-purple-400 font-mono">~{maxRadius} meters</span>
         </div>
       </div>
+
     </div>
   );
 }
