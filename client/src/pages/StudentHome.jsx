@@ -17,6 +17,35 @@ import {
   Smartphone
 } from 'lucide-react';
 
+function normalizePolygon(poly) {
+  if (!poly) return [];
+  let raw = poly;
+  while (typeof raw === 'string') {
+    try {
+      raw = JSON.parse(raw);
+    } catch (e) {
+      break;
+    }
+  }
+
+  // Handle GeoJSON format { type: 'Polygon', coordinates: [[[lng, lat], ...]] }
+  if (raw && raw.type === 'Polygon' && Array.isArray(raw.coordinates) && raw.coordinates[0]) {
+    return raw.coordinates[0].map(c => [parseFloat(c[1]), parseFloat(c[0])]).filter(c => !isNaN(c[0]) && !isNaN(c[1]));
+  }
+
+  if (!Array.isArray(raw)) return [];
+
+  return raw.map(p => {
+    if (Array.isArray(p) && p.length >= 2) return [parseFloat(p[0]), parseFloat(p[1])];
+    if (typeof p === 'object' && p !== null) {
+      const lat = parseFloat(p.lat !== undefined ? p.lat : p.latitude);
+      const lng = parseFloat(p.lng !== undefined ? p.lng : p.lon !== undefined ? p.lon : p.longitude);
+      if (!isNaN(lat) && !isNaN(lng)) return [lat, lng];
+    }
+    return null;
+  }).filter(Boolean);
+}
+
 export default function StudentHome({ onOpenPwaNotice }) {
   const [studentId, setStudentId] = useState('23-140015');
   const [studentInfo, setStudentInfo] = useState(null);
@@ -127,28 +156,6 @@ export default function StudentHome({ onOpenPwaNotice }) {
 
     return () => clearTimeout(timer);
   }, [studentId]);
-
-function normalizePolygon(poly) {
-  if (!poly) return [];
-  let raw = poly;
-  if (typeof poly === 'string') {
-    try {
-      raw = JSON.parse(poly);
-    } catch (e) {
-      return [];
-    }
-  }
-  if (!Array.isArray(raw)) return [];
-  return raw.map(p => {
-    if (Array.isArray(p) && p.length >= 2) return [parseFloat(p[0]), parseFloat(p[1])];
-    if (typeof p === 'object' && p !== null) {
-      const lat = parseFloat(p.lat !== undefined ? p.lat : p.latitude);
-      const lng = parseFloat(p.lng !== undefined ? p.lng : p.lon !== undefined ? p.lon : p.longitude);
-      if (!isNaN(lat) && !isNaN(lng)) return [lat, lng];
-    }
-    return null;
-  }).filter(Boolean);
-}
 
   // Pure Ray-Casting Point-in-Polygon check for live client-side telemetry
   const isPointInPolygon = (point, polygon) => {
@@ -456,8 +463,8 @@ function normalizePolygon(poly) {
               <span className="text-[9px] sm:text-[10px] uppercase text-slate-400 block font-medium">Geofence Boundary</span>
               <span className="text-xs sm:text-sm font-bold text-indigo-400">
                 {normalizePolygon(activeEvent.polygon_coordinates).length >= 3
-                  ? `Polygon (${normalizePolygon(activeEvent.polygon_coordinates).length} Corners)`
-                  : `${activeEvent.radius_m}m Radius`}
+                  ? `Polygon (${normalizePolygon(activeEvent.polygon_coordinates).length} Vertices)`
+                  : 'Custom Polygon'}
               </span>
             </div>
             <div className="p-2 sm:p-2.5 rounded-xl bg-slate-900/60 border border-slate-800">

@@ -183,7 +183,7 @@ export default function PenaltyEngineView() {
                     <td className="py-3 px-3">
                       {res.violations.length === 0 ? (
                         <span className="text-emerald-400 font-medium text-[11px] flex items-center gap-1">
-                          <CheckCircle2 className="w-3.5 h-3.5" /> Full Duration & Radius Compliant
+                          <CheckCircle2 className="w-3.5 h-3.5" /> Full Duration & Polygon Geofence Compliant
                         </span>
                       ) : (
                         <div className="space-y-1">

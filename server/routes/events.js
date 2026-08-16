@@ -188,16 +188,9 @@ router.post('/', authenticateToken, requireRole(['admin', 'superadmin']), (req, 
   let normalizedPoly = normalizePolygon(polygon_coordinates);
   if (normalizedPoly.length >= 3) {
     const centroid = calculateCentroid(normalizedPoly);
-    if (center_lat === undefined || isNaN(parseFloat(center_lat))) {
-      center_lat = centroid.lat;
-    }
-    if (center_lng === undefined || isNaN(parseFloat(center_lng))) {
-      center_lng = centroid.lng;
-    }
-    const maxR = calculateMaxRadius(normalizedPoly, centroid);
-    if (radius_m === undefined || isNaN(parseFloat(radius_m))) {
-      radius_m = maxR;
-    }
+    center_lat = (center_lat !== undefined && !isNaN(parseFloat(center_lat))) ? parseFloat(center_lat) : centroid.lat;
+    center_lng = (center_lng !== undefined && !isNaN(parseFloat(center_lng))) ? parseFloat(center_lng) : centroid.lng;
+    radius_m = calculateMaxRadius(normalizedPoly, { lat: center_lat, lng: center_lng });
   } else {
     // Generate default hexagon polygon around center_lat/center_lng if not provided
     const lat = center_lat !== undefined ? parseFloat(center_lat) : 18.1960;
@@ -205,8 +198,8 @@ router.post('/', authenticateToken, requireRole(['admin', 'superadmin']), (req, 
     const rad = radius_m !== undefined ? parseFloat(radius_m) : 100;
     center_lat = lat;
     center_lng = lng;
-    radius_m = rad;
     normalizedPoly = generateDefaultPolygon(lat, lng, rad);
+    radius_m = calculateMaxRadius(normalizedPoly, { lat, lng });
   }
 
   const polygonString = JSON.stringify(normalizedPoly);
@@ -242,13 +235,18 @@ router.post('/', authenticateToken, requireRole(['admin', 'superadmin']), (req, 
     insertWindow.run(eventId, w.window_type, w.start_time, w.end_time);
   });
 
+  const createdEvent = db.prepare(`SELECT * FROM events WHERE id = ?`).get(eventId);
+  const formattedEvent = formatEvent(createdEvent);
+  formattedEvent.windows = db.prepare(`SELECT * FROM event_windows WHERE event_id = ? ORDER BY start_time ASC`).all(eventId);
+
   // Emit socket event for real-time admin sync
   const reqIo = req.app.get('io');
-  if (reqIo) reqIo.emit('events_updated', { action: 'create', eventId });
+  if (reqIo) reqIo.emit('events_updated', { action: 'create', eventId, event: formattedEvent });
 
   res.status(201).json({
     message: 'Event created successfully',
-    eventId
+    eventId,
+    event: formattedEvent
   });
 });
 
@@ -305,14 +303,14 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'superadmin']), (req
   let finalCenterLng = center_lng !== undefined ? parseFloat(center_lng) : event.center_lng;
   let finalRadius = radius_m !== undefined ? parseFloat(radius_m) : event.radius_m;
 
-  if (polygon_coordinates) {
+  if (polygon_coordinates !== undefined) {
     const norm = normalizePolygon(polygon_coordinates);
     if (norm.length >= 3) {
       finalPolyString = JSON.stringify(norm);
       const centroid = calculateCentroid(norm);
-      if (center_lat === undefined) finalCenterLat = centroid.lat;
-      if (center_lng === undefined) finalCenterLng = centroid.lng;
-      if (radius_m === undefined) finalRadius = calculateMaxRadius(norm, centroid);
+      finalCenterLat = (center_lat !== undefined && !isNaN(parseFloat(center_lat))) ? parseFloat(center_lat) : centroid.lat;
+      finalCenterLng = (center_lng !== undefined && !isNaN(parseFloat(center_lng))) ? parseFloat(center_lng) : centroid.lng;
+      finalRadius = calculateMaxRadius(norm, { lat: finalCenterLat, lng: finalCenterLng });
     }
   }
 
@@ -331,17 +329,17 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'superadmin']), (req
       status = ?
     WHERE id = ?
   `).run(
-    name || event.name,
+    name !== undefined ? name : event.name,
     description !== undefined ? description : event.description,
     finalCenterLat,
     finalCenterLng,
     finalRadius,
     finalPolyString,
     grace_minutes !== undefined ? parseInt(grace_minutes) : event.grace_minutes,
-    college_filter || event.college_filter,
-    course_filter || event.course_filter,
-    year_filter || event.year_filter,
-    status || event.status,
+    college_filter !== undefined ? college_filter : event.college_filter,
+    course_filter !== undefined ? course_filter : event.course_filter,
+    year_filter !== undefined ? year_filter : event.year_filter,
+    status !== undefined ? status : event.status,
     activeId
   );
 
@@ -357,11 +355,18 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'superadmin']), (req
     });
   }
 
+  const updatedEvent = db.prepare(`SELECT * FROM events WHERE id = ?`).get(activeId);
+  const formatted = formatEvent(updatedEvent);
+  formatted.windows = db.prepare(`SELECT * FROM event_windows WHERE event_id = ? ORDER BY start_time ASC`).all(activeId);
+
   // Emit socket event for real-time admin sync
   const reqIo = req.app.get('io');
-  if (reqIo) reqIo.emit('events_updated', { action: 'update', eventId: activeId });
+  if (reqIo) reqIo.emit('events_updated', { action: 'update', eventId: activeId, event: formatted });
 
-  res.json({ message: 'Event updated successfully', newId: activeId });
+  res.json({
+    message: 'Event updated successfully',
+    event: formatted
+  });
 });
 
 // Delete event

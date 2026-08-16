@@ -197,8 +197,13 @@ router.post('/submit', (req, res) => {
 router.get('/live/:eventId', authenticateToken, (req, res) => {
   const eventId = req.params.eventId;
 
-  const event = db.prepare(`SELECT * FROM events WHERE id = ?`).get(eventId);
-  if (!event) return res.status(404).json({ error: 'Event not found' });
+  const rawEvent = db.prepare(`SELECT * FROM events WHERE id = ?`).get(eventId);
+  if (!rawEvent) return res.status(404).json({ error: 'Event not found' });
+
+  const event = {
+    ...rawEvent,
+    polygon_coordinates: normalizePolygon(rawEvent.polygon_coordinates)
+  };
 
   // Latest log per student for this event
   const latestLogs = db.prepare(`

@@ -30,6 +30,20 @@ function normalizePolygon(poly) {
   }).filter(Boolean);
 }
 
+function generateDefaultHexagon(centerLat, centerLng, radiusM = 100) {
+  const points = [];
+  const R = 6371000;
+  for (let i = 0; i < 6; i++) {
+    const angle = (i * 2 * Math.PI) / 6;
+    const dLat = (radiusM * Math.cos(angle)) / R;
+    const dLng = (radiusM * Math.sin(angle)) / (R * Math.cos(centerLat * (Math.PI / 180)));
+    const lat = centerLat + dLat * (180 / Math.PI);
+    const lng = centerLng + dLng * (180 / Math.PI);
+    points.push([Math.round(lat * 100000) / 100000, Math.round(lng * 100000) / 100000]);
+  }
+  return points;
+}
+
 export default function LiveGeofenceMap({
   event,
   studentCoords,
@@ -41,7 +55,6 @@ export default function LiveGeofenceMap({
   const mapContainerRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const eventPolygonRef = useRef(null);
-  const eventCircleRef = useRef(null);
   const vertexMarkersGroupRef = useRef(null);
   const centerMarkerRef = useRef(null);
   const studentMarkerRef = useRef(null);
@@ -78,7 +91,6 @@ export default function LiveGeofenceMap({
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
         eventPolygonRef.current = null;
-        eventCircleRef.current = null;
         vertexMarkersGroupRef.current = null;
         centerMarkerRef.current = null;
         studentMarkerRef.current = null;
@@ -91,9 +103,14 @@ export default function LiveGeofenceMap({
     if (!mapInstanceRef.current || !event) return;
     const map = mapInstanceRef.current;
 
-    const polygonCoords = normalizePolygon(event.polygon_coordinates);
     const centerLat = parseFloat(event.center_lat) || 18.1960;
     const centerLng = parseFloat(event.center_lng) || 120.5927;
+    let polygonCoords = normalizePolygon(event.polygon_coordinates);
+
+    // If less than 3 vertices, generate regular polygon so a real polygon is always rendered
+    if (polygonCoords.length < 3) {
+      polygonCoords = generateDefaultHexagon(centerLat, centerLng, event.radius_m || 100);
+    }
 
     // Centroid Radiant Gold Star Pin
     const centerIcon = L.divIcon({
@@ -131,78 +148,51 @@ export default function LiveGeofenceMap({
     }
 
     // Render Exact Polygon Geofence Shape
-    if (polygonCoords.length >= 3) {
-      // Clear fallback circle if present
-      if (eventCircleRef.current) {
-        map.removeLayer(eventCircleRef.current);
-        eventCircleRef.current = null;
-      }
-
-      if (!eventPolygonRef.current) {
-        eventPolygonRef.current = L.polygon(polygonCoords, {
-          color: '#818cf8',
-          fillColor: '#6366f1',
-          fillOpacity: 0.28,
-          weight: 3,
-          dashArray: '6, 6'
-        }).addTo(map);
-      } else {
-        eventPolygonRef.current.setLatLngs(polygonCoords);
-      }
-
-      // Draw distinct corner node dots on every vertex of the polygon
-      if (vertexMarkersGroupRef.current) {
-        polygonCoords.forEach((pt, idx) => {
-          const cornerDotIcon = L.divIcon({
-            className: 'corner-node',
-            html: `<div style="
-              width: 14px;
-              height: 14px;
-              background: #818cf8;
-              border: 2px solid #ffffff;
-              border-radius: 50%;
-              box-shadow: 0 0 8px rgba(99, 102, 241, 0.9);
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              color: white;
-              font-size: 8px;
-              font-weight: bold;
-            ">${idx + 1}</div>`,
-            iconSize: [14, 14],
-            iconAnchor: [7, 7]
-          });
-          L.marker(pt, { icon: cornerDotIcon }).addTo(vertexMarkersGroupRef.current);
-        });
-      }
-
-      if (!studentCoords) {
-        map.fitBounds(eventPolygonRef.current.getBounds().pad(0.35));
-      }
+    if (!eventPolygonRef.current) {
+      eventPolygonRef.current = L.polygon(polygonCoords, {
+        color: '#818cf8',
+        fillColor: '#6366f1',
+        fillOpacity: 0.28,
+        weight: 3,
+        dashArray: '6, 6'
+      }).addTo(map);
     } else {
-      // Fallback Circle if no polygon vertices
-      if (eventPolygonRef.current) {
-        map.removeLayer(eventPolygonRef.current);
-        eventPolygonRef.current = null;
-      }
+      eventPolygonRef.current.setLatLngs(polygonCoords);
+    }
 
-      if (!eventCircleRef.current) {
-        eventCircleRef.current = L.circle([centerLat, centerLng], {
-          color: '#818cf8',
-          fillColor: '#6366f1',
-          fillOpacity: 0.20,
-          weight: 2,
-          dashArray: '6, 6',
-          radius: event.radius_m || 100
-        }).addTo(map);
-      } else {
-        eventCircleRef.current.setLatLng([centerLat, centerLng]);
-        eventCircleRef.current.setRadius(event.radius_m || 100);
-      }
+    // Draw distinct corner node dots on every vertex of the polygon
+    if (vertexMarkersGroupRef.current) {
+      polygonCoords.forEach((pt, idx) => {
+        const cornerDotIcon = L.divIcon({
+          className: 'corner-node',
+          html: `<div style="
+            width: 14px; 
+            height: 14px; 
+            background: #818cf8; 
+            border: 2px solid #ffffff; 
+            border-radius: 50%; 
+            box-shadow: 0 0 8px rgba(99, 102, 241, 0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 8px;
+            font-weight: bold;
+          ">${idx + 1}</div>`,
+          iconSize: [14, 14],
+          iconAnchor: [7, 7]
+        });
+        L.marker(pt, { icon: cornerDotIcon }).addTo(vertexMarkersGroupRef.current);
+      });
+    }
 
-      if (!studentCoords) {
-        map.setView([centerLat, centerLng], 16);
-      }
+    if (!studentCoords && eventPolygonRef.current) {
+      try {
+        const polyBounds = eventPolygonRef.current.getBounds();
+        if (polyBounds.isValid()) {
+          map.fitBounds(polyBounds.pad(0.35));
+        }
+      } catch (e) {}
     }
   }, [event?.id, event?.center_lat, event?.center_lng, JSON.stringify(event?.polygon_coordinates)]);
 
@@ -308,7 +298,7 @@ export default function LiveGeofenceMap({
       <div className="absolute top-2 right-2 z-20 glass-panel px-3 py-1.5 rounded-lg border border-slate-700/80 text-[10px] text-slate-300 space-y-1 backdrop-blur-md">
         <div className="flex items-center gap-1.5 font-semibold">
           <span className="w-2.5 h-2.5 rounded-sm bg-indigo-500 border border-white"></span>
-          <span>Venue Polygon ({polygonVerticesCount > 0 ? `${polygonVerticesCount} Corners` : `${event?.radius_m}m Radius`})</span>
+          <span>Venue Boundary ({polygonVerticesCount > 0 ? `${polygonVerticesCount} Vertices` : 'Custom Polygon'})</span>
         </div>
         {studentCoords && (
           <div className="flex items-center gap-1.5">

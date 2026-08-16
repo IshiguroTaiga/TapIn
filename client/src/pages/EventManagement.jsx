@@ -344,6 +344,7 @@ export default function EventManagement() {
               {/* Interactive Polygon Geofence Drawer & Controls */}
               <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-4">
                 <GeofenceMapPicker
+                  key={editingEvent ? `edit-event-${editingEvent.id}` : 'create-new-event'}
                   polygon={polygonCoordinates}
                   centerLat={centerLat}
                   centerLng={centerLng}

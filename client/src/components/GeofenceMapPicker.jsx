@@ -208,6 +208,7 @@ export default function GeofenceMapPicker({
     if (centerLat && centerLng) {
       const c = { lat: parseFloat(centerLat), lng: parseFloat(centerLng) };
       setCenterPoint(c);
+      setIsCustomCenter(true);
     }
   }, [centerLat, centerLng]);
 
@@ -220,6 +221,14 @@ export default function GeofenceMapPicker({
         setVertices(norm);
         if (polygonLayerRef.current) {
           polygonLayerRef.current.setLatLngs(norm);
+        }
+        if (mapInstanceRef.current) {
+          try {
+            const polyBounds = L.polygon(norm).getBounds();
+            if (polyBounds.isValid()) {
+              mapInstanceRef.current.fitBounds(polyBounds.pad(0.3));
+            }
+          } catch (e) {}
         }
       }
     }
@@ -317,6 +326,15 @@ export default function GeofenceMapPicker({
           onMapClickRef.current(newPt);
         }
       });
+
+      if (vertices.length >= 3) {
+        try {
+          const polyBounds = L.polygon(vertices).getBounds();
+          if (polyBounds.isValid()) {
+            map.fitBounds(polyBounds.pad(0.3));
+          }
+        } catch (e) {}
+      }
     }
 
     return () => {
