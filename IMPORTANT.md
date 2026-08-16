@@ -274,7 +274,7 @@ npm run eval:ml
 
 ---
 
-## 6. Defense Cheat Sheet & Quick Q&A
+## 6. Quick Q&A
 
 ### ❓ Q1: How does the Ray-Casting algorithm determine if a student is inside the geofence?
 > **Answer**: It is based on the **Jordan Curve Theorem**. An eastward horizontal ray is projected from the student's GPS coordinate $(lng, lat)$ to $(+\infty, lat)$. The algorithm iterates through every edge of the venue polygon and counts how many times the ray intersects an edge. If the intersection count is **ODD**, the student is **INSIDE**; if it is **EVEN**, the student is **OUTSIDE**.
