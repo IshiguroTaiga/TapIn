@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import GeofenceMapPicker from '../components/GeofenceMapPicker';
+import CheckpointMapPicker from '../components/CheckpointMapPicker';
 import { MMSU_COLLEGES } from '../constants/colleges';
 import {
   Calendar,
@@ -20,7 +21,9 @@ import {
   Layers,
   Camera,
   FileText,
-  X
+  X,
+  Target,
+  ListTodo
 } from 'lucide-react';
 
 export default function EventManagement() {
@@ -33,6 +36,7 @@ export default function EventManagement() {
   const [showCheckpointsModal, setShowCheckpointsModal] = useState(false);
   const [activeCheckpointEvent, setActiveCheckpointEvent] = useState(null);
   const [checkpointsList, setCheckpointsList] = useState([]);
+  const [selectedCheckpointIndex, setSelectedCheckpointIndex] = useState(0);
   const [allowDuplicateTasks, setAllowDuplicateTasks] = useState(false);
   const [randomizeTasks, setRandomizeTasks] = useState(false);
   const [taskCollisionWindowMinutes, setTaskCollisionWindowMinutes] = useState(10);
@@ -44,7 +48,7 @@ export default function EventManagement() {
   const [newTaskDesc, setNewTaskDesc] = useState('');
   const [newTaskType, setNewTaskType] = useState('photo');
   const [newTaskInstructions, setNewTaskInstructions] = useState('');
-  const [selectedCheckpointForTask, setSelectedCheckpointForTask] = useState(null);
+  const [addingTask, setAddingTask] = useState(false);
 
   // Form State (Default to Laoag City, Ilocos Norte)
   const [customEventId, setCustomEventId] = useState('');
@@ -144,12 +148,10 @@ export default function EventManagement() {
     setActiveCheckpointEvent(event);
     setCheckpointError(null);
     setCheckpointsList(event.checkpoints || []);
+    setSelectedCheckpointIndex(0);
     setAllowDuplicateTasks(Boolean(event.allow_duplicate_tasks));
     setRandomizeTasks(Boolean(event.randomize_tasks));
     setTaskCollisionWindowMinutes(event.task_collision_window_minutes || 10);
-    if (event.checkpoints?.length > 0) {
-      setSelectedCheckpointForTask(event.checkpoints[0].id);
-    }
     setShowCheckpointsModal(true);
 
     try {
@@ -159,9 +161,6 @@ export default function EventManagement() {
         setAllowDuplicateTasks(Boolean(res.data.allowDuplicateTasks));
         setRandomizeTasks(Boolean(res.data.randomizeTasks));
         setTaskCollisionWindowMinutes(res.data.taskCollisionWindowMinutes || 10);
-        if (res.data.checkpoints?.length > 0) {
-          setSelectedCheckpointForTask(res.data.checkpoints[0].id);
-        }
       }
     } catch (err) {
       console.warn('Could not sync remote checkpoints:', err.message);
@@ -179,7 +178,7 @@ export default function EventManagement() {
 
     const newCp = {
       id: null,
-      name: `Station ${checkpointsList.length + 1}`,
+      name: `Station #${checkpointsList.length + 1}`,
       description: 'Checkpoint Zone',
       lat: Math.round((cLat + offset) * 100000) / 100000,
       lng: Math.round((cLng + offset) * 100000) / 100000,
@@ -187,17 +186,24 @@ export default function EventManagement() {
       tasks: []
     };
 
-    setCheckpointsList([...checkpointsList, newCp]);
+    const updated = [...checkpointsList, newCp];
+    setCheckpointsList(updated);
+    setSelectedCheckpointIndex(updated.length - 1);
   };
 
-  const handleUpdateCheckpointField = (index, field, value) => {
+  const handleUpdateSelectedCheckpoint = (field, value) => {
+    if (selectedCheckpointIndex < 0 || selectedCheckpointIndex >= checkpointsList.length) return;
     const updated = [...checkpointsList];
-    updated[index][field] = value;
+    updated[selectedCheckpointIndex][field] = value;
     setCheckpointsList(updated);
   };
 
   const handleRemoveCheckpoint = (index) => {
-    setCheckpointsList(checkpointsList.filter((_, i) => i !== index));
+    const updated = checkpointsList.filter((_, i) => i !== index);
+    setCheckpointsList(updated);
+    if (selectedCheckpointIndex >= updated.length) {
+      setSelectedCheckpointIndex(Math.max(0, updated.length - 1));
+    }
   };
 
   const handleSaveCheckpoints = async () => {
@@ -221,38 +227,68 @@ export default function EventManagement() {
     }
   };
 
-  const handleCreateTaskForCheckpoint = async () => {
-    if (!selectedCheckpointForTask || !newTaskTitle || !newTaskDesc) {
-      alert('Please select a checkpoint and provide a task title and description.');
+  const handleAddTaskToSelectedCheckpoint = async () => {
+    const selectedCp = checkpointsList[selectedCheckpointIndex];
+    if (!selectedCp || !newTaskTitle || !newTaskDesc) {
+      alert('Please provide a task title and description.');
       return;
     }
 
+    setAddingTask(true);
     try {
-      await axios.post(`/api/checkpoints/${selectedCheckpointForTask}/tasks`, {
-        title: newTaskTitle,
-        description: newTaskDesc,
-        task_type: newTaskType,
-        instructions: newTaskInstructions
-      });
+      if (selectedCp.id) {
+        // Checkpoint exists on server -> persist via API
+        await axios.post(`/api/checkpoints/${selectedCp.id}/tasks`, {
+          title: newTaskTitle,
+          description: newTaskDesc,
+          task_type: newTaskType,
+          instructions: newTaskInstructions
+        });
+
+        // Refresh checkpoints
+        const res = await axios.get(`/api/checkpoints/event/${activeCheckpointEvent.id}`);
+        if (res.data?.checkpoints) {
+          setCheckpointsList(res.data.checkpoints);
+        }
+      } else {
+        // Local checkpoint not yet saved -> add to local task array
+        const newTask = {
+          id: `local_${Date.now()}`,
+          title: newTaskTitle,
+          description: newTaskDesc,
+          task_type: newTaskType,
+          instructions: newTaskInstructions
+        };
+        const updated = [...checkpointsList];
+        updated[selectedCheckpointIndex].tasks = [...(updated[selectedCheckpointIndex].tasks || []), newTask];
+        setCheckpointsList(updated);
+      }
 
       setNewTaskTitle('');
       setNewTaskDesc('');
       setNewTaskInstructions('');
-
-      // Refresh checkpoints
-      const res = await axios.get(`/api/checkpoints/event/${activeCheckpointEvent.id}`);
-      setCheckpointsList(res.data.checkpoints);
     } catch (err) {
-      alert('Failed to add task: ' + err.message);
+      alert('Failed to add task: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setAddingTask(false);
     }
   };
 
-  const handleDeleteTask = async (taskId) => {
+  const handleDeleteTask = async (taskId, taskIdx) => {
     if (!confirm('Are you sure you want to delete this task?')) return;
     try {
-      await axios.delete(`/api/checkpoints/tasks/${taskId}`);
-      const res = await axios.get(`/api/checkpoints/event/${activeCheckpointEvent.id}`);
-      setCheckpointsList(res.data.checkpoints);
+      if (typeof taskId === 'number' || (typeof taskId === 'string' && !taskId.startsWith('local_'))) {
+        await axios.delete(`/api/checkpoints/tasks/${taskId}`);
+        const res = await axios.get(`/api/checkpoints/event/${activeCheckpointEvent.id}`);
+        if (res.data?.checkpoints) {
+          setCheckpointsList(res.data.checkpoints);
+        }
+      } else {
+        // Remove from local state
+        const updated = [...checkpointsList];
+        updated[selectedCheckpointIndex].tasks = (updated[selectedCheckpointIndex].tasks || []).filter((_, i) => i !== taskIdx);
+        setCheckpointsList(updated);
+      }
     } catch (err) {
       alert('Failed to delete task: ' + err.message);
     }
@@ -313,6 +349,8 @@ export default function EventManagement() {
     newWindows[index][field] = value;
     setWindows(newWindows);
   };
+
+  const selectedCheckpoint = checkpointsList[selectedCheckpointIndex] || null;
 
   return (
     <div className="space-y-6">
@@ -419,17 +457,19 @@ export default function EventManagement() {
         </div>
       )}
 
-      {/* Checkpoints & Task Pools Configuration Modal */}
+      {/* Interactive Checkpoints & Task Pools Configuration Modal */}
       {showCheckpointsModal && activeCheckpointEvent && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
-          <div className="glass-card max-w-3xl w-full rounded-2xl p-4 sm:p-6 border border-cyan-500/40 space-y-5 my-auto animate-in fade-in zoom-in-95 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-start justify-between gap-2">
+          <div className="glass-card max-w-4xl w-full rounded-2xl p-4 sm:p-6 border border-cyan-500/40 space-y-5 my-auto animate-in fade-in zoom-in-95 max-h-[92vh] overflow-y-auto">
+            
+            {/* Modal Header */}
+            <div className="flex items-start justify-between gap-2 border-b border-slate-800 pb-3">
               <div>
                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
-                  NESTED CHECKPOINT ENGINE
+                  INTERACTIVE CHECKPOINT STATION & TASK POOL MANAGER
                 </span>
-                <h2 className="text-lg font-bold text-white mt-1">Checkpoints & Tasks: {activeCheckpointEvent.name}</h2>
-                <p className="text-xs text-slate-400">Configure up to 3 checkpoint stations and anti-collusion task pools.</p>
+                <h2 className="text-lg font-bold text-white mt-1">Checkpoints: {activeCheckpointEvent.name}</h2>
+                <p className="text-xs text-slate-400">Click anywhere on the map inside the venue polygon to place station nodes, or select a station to configure its tasks.</p>
               </div>
 
               <button
@@ -447,11 +487,207 @@ export default function EventManagement() {
               </div>
             )}
 
-            {/* Task Distribution Rules & Admin Toggles */}
-            <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-3 text-xs">
-              <h3 className="font-bold text-white flex items-center gap-2">
+            {/* Interactive Checkpoint Map Placement Canvas */}
+            <CheckpointMapPicker
+              event={activeCheckpointEvent}
+              checkpoints={checkpointsList}
+              selectedCheckpointIndex={selectedCheckpointIndex}
+              onSelectCheckpoint={(idx) => setSelectedCheckpointIndex(idx)}
+              onCheckpointsChange={(updated) => setCheckpointsList(updated)}
+              maxAllowed={3}
+            />
+
+            {/* Station Selection Tabs */}
+            <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-2 flex-wrap">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-1 flex items-center gap-1">
+                  <Target className="w-3.5 h-3.5 text-cyan-400" />
+                  Stations:
+                </span>
+                {checkpointsList.length === 0 ? (
+                  <span className="text-xs text-slate-500 italic">No stations placed yet. Click the map above to drop a station.</span>
+                ) : (
+                  checkpointsList.map((cp, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => setSelectedCheckpointIndex(idx)}
+                      className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
+                        selectedCheckpointIndex === idx
+                          ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-600/30 border border-cyan-400'
+                          : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                      }`}
+                    >
+                      <span className="w-4 h-4 rounded-full bg-slate-950/60 flex items-center justify-center text-[10px]">
+                        C{idx + 1}
+                      </span>
+                      <span>{cp.name || `Station #${idx + 1}`}</span>
+                      <span className="text-[10px] opacity-75">({(cp.tasks || []).length} tasks)</span>
+                    </button>
+                  ))
+                )}
+              </div>
+
+              {checkpointsList.length < 3 && (
+                <button
+                  type="button"
+                  onClick={handleAddCheckpoint}
+                  className="px-3 py-1.5 rounded-xl bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 border border-cyan-500/30 text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Station (+1)</span>
+                </button>
+              )}
+            </div>
+
+            {/* Selected Station Configuration & Task Pool Card */}
+            {selectedCheckpoint && (
+              <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-4 text-xs animate-in fade-in">
+                
+                {/* Station Parameters */}
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
+                  <div className="sm:col-span-2">
+                    <label className="text-[10px] text-slate-400 block font-bold uppercase mb-1">Station Name</label>
+                    <input
+                      type="text"
+                      value={selectedCheckpoint.name || ''}
+                      onChange={(e) => handleUpdateSelectedCheckpoint('name', e.target.value)}
+                      placeholder="e.g. Registration Booth / Hall Entrance"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white font-semibold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] text-slate-400 block font-bold uppercase mb-1">
+                      Catchment Radius: <span className="text-cyan-400 font-mono">{selectedCheckpoint.radius_m || 20}m</span>
+                    </label>
+                    <input
+                      type="range"
+                      min={10}
+                      max={50}
+                      step={2}
+                      value={selectedCheckpoint.radius_m || 20}
+                      onChange={(e) => handleUpdateSelectedCheckpoint('radius_m', parseFloat(e.target.value))}
+                      className="w-full accent-cyan-500 cursor-pointer"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveCheckpoint(selectedCheckpointIndex)}
+                    className="py-2 px-3 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete Station</span>
+                  </button>
+                </div>
+
+                {/* Tasks in this Station Pool */}
+                <div className="space-y-2 pt-2 border-t border-slate-800">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-white flex items-center gap-1.5">
+                      <ListTodo className="w-4 h-4 text-cyan-400" />
+                      Task Pool for {selectedCheckpoint.name || `Station #${selectedCheckpointIndex + 1}`} ({(selectedCheckpoint.tasks || []).length} Tasks)
+                    </span>
+                  </div>
+
+                  {(selectedCheckpoint.tasks || []).length === 0 ? (
+                    <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 text-center text-slate-500 italic">
+                      No tasks added to this checkpoint station pool yet. Use the form below to add a photo or text task.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {selectedCheckpoint.tasks.map((task, taskIdx) => (
+                        <div key={task.id || taskIdx} className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-start justify-between gap-2">
+                          <div className="flex items-start gap-2.5">
+                            <div className="p-1.5 rounded-lg bg-slate-900 text-cyan-400 border border-slate-800 shrink-0 mt-0.5">
+                              {task.task_type === 'photo' ? <Camera className="w-4 h-4" /> : <FileText className="w-4 h-4 text-purple-400" />}
+                            </div>
+                            <div>
+                              <strong className="text-white block font-bold text-xs">{task.title}</strong>
+                              <p className="text-[11px] text-slate-400 line-clamp-2 mt-0.5">{task.description}</p>
+                              <span className="inline-block mt-1 px-2 py-0.5 rounded bg-slate-900 text-[10px] text-slate-400 font-mono">
+                                {task.task_type === 'photo' ? '📷 EXIF + Perceptual Hash' : '📝 Short Answer'}
+                              </span>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteTask(task.id, taskIdx)}
+                            className="p-1.5 rounded-lg text-rose-400 hover:bg-rose-500/20 cursor-pointer transition-colors"
+                            title="Delete Task"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Inline Add Task Form */}
+                <div className="p-3.5 rounded-xl bg-slate-950 border border-cyan-500/20 space-y-3">
+                  <span className="font-bold text-cyan-300 flex items-center gap-1.5 text-xs">
+                    <Plus className="w-3.5 h-3.5" />
+                    Append New Task to this Station Pool:
+                  </span>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div>
+                      <label className="text-[10px] text-slate-400 block mb-0.5 font-semibold">Task Type</label>
+                      <select
+                        value={newTaskType}
+                        onChange={(e) => setNewTaskType(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white"
+                      >
+                        <option value="photo">Photo Upload (EXIF + dHash Duplicate Check)</option>
+                        <option value="text">Short Text / Code Answer</option>
+                      </select>
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="text-[10px] text-slate-400 block mb-0.5 font-semibold">Task Title</label>
+                      <input
+                        type="text"
+                        value={newTaskTitle}
+                        onChange={(e) => setNewTaskTitle(e.target.value)}
+                        placeholder="e.g. Capture Registration Stage Banner"
+                        className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] text-slate-400 block mb-0.5 font-semibold">Task Prompt / Verification Description</label>
+                    <input
+                      type="text"
+                      value={newTaskDesc}
+                      onChange={(e) => setNewTaskDesc(e.target.value)}
+                      placeholder="e.g. Take a live photo showing the official banner at Station #1 to prove physical arrival."
+                      className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleAddTaskToSelectedCheckpoint}
+                    disabled={addingTask}
+                    className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-cyan-600/30 transition-all cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>{addingTask ? 'Saving Task...' : 'Add Task to Pool'}</span>
+                  </button>
+                </div>
+
+              </div>
+            )}
+
+            {/* Anti-Collusion Distribution Rules */}
+            <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2 text-xs">
+              <h3 className="font-bold text-white flex items-center gap-1.5">
                 <Shuffle className="w-4 h-4 text-cyan-400" />
-                Task Distribution Algorithm & Anti-Collusion Settings
+                Anti-Collusion Task Distribution Settings
               </h3>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -498,200 +734,26 @@ export default function EventManagement() {
               </div>
             </div>
 
-            {/* Checkpoint List Editor */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="font-bold text-white text-xs flex items-center gap-2">
-                  <MapPin className="w-4 h-4 text-cyan-400" />
-                  Checkpoint Stations ({checkpointsList.length}/3)
-                </h3>
-                {checkpointsList.length < 3 && (
-                  <button
-                    onClick={handleAddCheckpoint}
-                    className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-1 cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Add Checkpoint</span>
-                  </button>
-                )}
-              </div>
-
-              {checkpointsList.map((cp, idx) => (
-                <div key={idx} className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-bold text-xs text-cyan-400 flex items-center gap-1.5">
-                      <span className="w-5 h-5 rounded-full bg-cyan-500/20 flex items-center justify-center text-[10px]">
-                        {idx + 1}
-                      </span>
-                      Station #{idx + 1}
-                    </span>
-                    <button
-                      onClick={() => handleRemoveCheckpoint(idx)}
-                      className="text-rose-400 hover:text-rose-300 p-1 cursor-pointer"
-                      title="Remove Station"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 text-xs">
-                    <div className="sm:col-span-2">
-                      <label className="text-[10px] text-slate-400 block mb-0.5">Station Name</label>
-                      <input
-                        type="text"
-                        value={cp.name || ''}
-                        onChange={(e) => handleUpdateCheckpointField(idx, 'name', e.target.value)}
-                        placeholder="e.g. Registration Booth"
-                        className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-slate-400 block mb-0.5">Radius (m)</label>
-                      <input
-                        type="number"
-                        value={cp.radius_m || 20}
-                        onChange={(e) => handleUpdateCheckpointField(idx, 'radius_m', parseFloat(e.target.value))}
-                        className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white font-mono"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-slate-400 block mb-0.5">Lat, Lng</label>
-                      <input
-                        type="text"
-                        value={`${cp.lat}, ${cp.lng}`}
-                        onChange={(e) => {
-                          const parts = e.target.value.split(',');
-                          if (parts.length === 2) {
-                            handleUpdateCheckpointField(idx, 'lat', parseFloat(parts[0].trim()));
-                            handleUpdateCheckpointField(idx, 'lng', parseFloat(parts[1].trim()));
-                          }
-                        }}
-                        className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white font-mono text-[11px]"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Tasks in this Checkpoint Pool */}
-                  <div className="pt-2 border-t border-slate-800/80">
-                    <span className="text-[10px] font-bold uppercase text-slate-400 block mb-1.5">
-                      Task Pool ({(cp.tasks || []).length} Available Tasks)
-                    </span>
-                    {(cp.tasks || []).length === 0 ? (
-                      <p className="text-[11px] text-slate-500 italic">No tasks in this pool yet.</p>
-                    ) : (
-                      <div className="space-y-1.5">
-                        {cp.tasks.map(task => (
-                          <div key={task.id} className="p-2 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-between text-xs">
-                            <div className="flex items-center gap-2">
-                              {task.task_type === 'photo' ? (
-                                <Camera className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                              ) : (
-                                <FileText className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                              )}
-                              <div>
-                                <strong className="text-white block">{task.title}</strong>
-                                <span className="text-[10px] text-slate-400">{task.description}</span>
-                              </div>
-                            </div>
-                            <button
-                              onClick={() => handleDeleteTask(task.id)}
-                              className="text-rose-400 hover:text-rose-300 p-1 cursor-pointer"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Add Task Form */}
-            {checkpointsList.length > 0 && (
-              <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-3 text-xs">
-                <h4 className="font-bold text-white flex items-center gap-1.5">
-                  <Plus className="w-4 h-4 text-cyan-400" />
-                  Add Task to Checkpoint Pool
-                </h4>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  <div>
-                    <label className="text-[10px] text-slate-400 block mb-0.5">Target Station</label>
-                    <select
-                      value={selectedCheckpointForTask || ''}
-                      onChange={(e) => setSelectedCheckpointForTask(parseInt(e.target.value))}
-                      className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white"
-                    >
-                      {checkpointsList.map((cp, i) => (
-                        <option key={cp.id || i} value={cp.id || ''}>
-                          {cp.name || `Station #${i + 1}`}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-slate-400 block mb-0.5">Task Type</label>
-                    <select
-                      value={newTaskType}
-                      onChange={(e) => setNewTaskType(e.target.value)}
-                      className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white"
-                    >
-                      <option value="photo">Photo Upload (EXIF + Perceptual Hash)</option>
-                      <option value="text">Short Text / Code Answer</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-slate-400 block mb-0.5">Task Title</label>
-                    <input
-                      type="text"
-                      value={newTaskTitle}
-                      onChange={(e) => setNewTaskTitle(e.target.value)}
-                      placeholder="e.g. Capture Registration Banner"
-                      className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[10px] text-slate-400 block mb-0.5">Task Description / Instructions</label>
-                  <input
-                    type="text"
-                    value={newTaskDesc}
-                    onChange={(e) => setNewTaskDesc(e.target.value)}
-                    placeholder="e.g. Photograph the official welcome banner near the registration table."
-                    className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white"
-                  />
-                </div>
-
-                <button
-                  onClick={handleCreateTaskForCheckpoint}
-                  className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Append Task to Pool</span>
-                </button>
-              </div>
-            )}
-
-            {/* Save Action */}
-            <div className="flex items-center justify-end gap-2 pt-2">
+            {/* Modal Action Buttons */}
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
               <button
+                type="button"
                 onClick={() => setShowCheckpointsModal(false)}
-                className="px-4 py-2 rounded-xl bg-slate-900 text-slate-400 hover:text-white text-xs font-bold cursor-pointer"
+                className="px-4 py-2.5 rounded-xl bg-slate-900 text-slate-400 hover:text-white text-xs font-bold cursor-pointer"
               >
                 Close
               </button>
               <button
+                type="button"
                 onClick={handleSaveCheckpoints}
                 disabled={savingCheckpoints}
-                className="px-5 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-cyan-600/30 cursor-pointer"
+                className="px-6 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-cyan-600/30 cursor-pointer transition-all"
               >
                 <Save className="w-4 h-4" />
-                <span>{savingCheckpoints ? 'Validating & Saving...' : 'Save Checkpoint Configuration'}</span>
+                <span>{savingCheckpoints ? 'Validating & Saving...' : 'Save Checkpoints & Task Pools'}</span>
               </button>
             </div>
+
           </div>
         </div>
       )}

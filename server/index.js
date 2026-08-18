@@ -19,16 +19,23 @@ const checkpointRoutes = require('./routes/checkpoints');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
+  path: '/socket.io',
   cors: {
     origin: '*',
-    methods: ['GET', 'POST', 'PUT', 'DELETE']
-  }
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    credentials: true
+  },
+  transports: ['websocket', 'polling']
 });
 
 // Middleware
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  credentials: true
+}));
+app.use(express.json({ limit: '15mb' }));
+app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
 // Serve uploaded task photos
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
@@ -69,7 +76,9 @@ const clientDist = path.join(__dirname, '../client/dist');
 app.use(express.static(clientDist));
 
 app.use((req, res, next) => {
-  if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) return next();
+  if (req.path.startsWith('/api') || req.path.startsWith('/uploads') || req.path.startsWith('/socket.io')) {
+    return next();
+  }
   const indexPath = path.join(clientDist, 'index.html');
   if (require('fs').existsSync(indexPath)) {
     res.sendFile(indexPath);
