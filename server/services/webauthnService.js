@@ -16,6 +16,12 @@ const db = require('../db');
 // Helper to determine RP ID from request headers or environment
 function getRpId(req) {
   if (process.env.RP_ID) return process.env.RP_ID;
+  if (req?.headers?.origin) {
+    try {
+      const url = new URL(req.headers.origin);
+      return url.hostname;
+    } catch (e) {}
+  }
   const host = req?.headers?.host || 'localhost';
   return host.split(':')[0]; // Strip port for RP ID
 }

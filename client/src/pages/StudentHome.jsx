@@ -26,6 +26,7 @@ import {
   Eye,
   Fingerprint,
   Mail,
+  AlertCircle,
   X
 } from 'lucide-react';
 
