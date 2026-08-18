@@ -24,6 +24,8 @@ import {
   UploadCloud,
   FileCheck,
   Eye,
+  Fingerprint,
+  Mail,
   X
 } from 'lucide-react';
 
@@ -84,7 +86,25 @@ export default function StudentHome({ onOpenPwaNotice }) {
   const [submissionResult, setSubmissionResult] = useState(null);
   const [submissionError, setSubmissionError] = useState(null);
 
-  // Cryptographic Credential State
+  // WebAuthn Biometrics State
+  const [hasWebAuthn, setHasWebAuthn] = useState(false);
+  const [isEnrollingWebAuthn, setIsEnrollingWebAuthn] = useState(false);
+  const [webAuthnSuccess, setWebAuthnSuccess] = useState(null);
+  const [webAuthnError, setWebAuthnError] = useState(null);
+  const [isWebAuthnSupported, setIsWebAuthnSupported] = useState(true);
+
+  // Email OTP Fallback State
+  const [authMode, setAuthMode] = useState('webauthn'); // 'webauthn' | 'email_otp'
+  const [maskedEmail, setMaskedEmail] = useState('');
+  const [otpInput, setOtpInput] = useState('');
+  const [otpSending, setOtpSending] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpCooldown, setOtpCooldown] = useState(0);
+  const [otpError, setOtpError] = useState(null);
+  const [otpDevCode, setOtpDevCode] = useState(null);
+  const [verifiedOtpToken, setVerifiedOtpToken] = useState(null);
+
+  // Cryptographic Credential State (Backwards-compatibility)
   const [credentialPass, setCredentialPass] = useState(null);
   const [isEnrollingKey, setIsEnrollingKey] = useState(false);
   const [showQrModal, setShowQrModal] = useState(false);
@@ -103,6 +123,38 @@ export default function StudentHome({ onOpenPwaNotice }) {
 
   const watchIdRef = useRef(null);
   const graceTimerRef = useRef(null);
+  const otpCooldownTimerRef = useRef(null);
+
+  // Check WebAuthn support and registered status
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setIsWebAuthnSupported(Boolean(window.PublicKeyCredential));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!studentId || studentId.trim().length < 5) return;
+    checkWebAuthnStatus(studentId.trim());
+  }, [studentId]);
+
+  const checkWebAuthnStatus = async (id) => {
+    try {
+      const res = await axios.get(`/api/auth/webauthn/status/${id}`);
+      setHasWebAuthn(Boolean(res.data?.has_webauthn));
+    } catch (err) {
+      setHasWebAuthn(false);
+    }
+  };
+
+  // OTP Cooldown Countdown Timer
+  useEffect(() => {
+    if (otpCooldown > 0) {
+      otpCooldownTimerRef.current = setTimeout(() => {
+        setOtpCooldown(otpCooldown - 1);
+      }, 1000);
+    }
+    return () => clearTimeout(otpCooldownTimerRef.current);
+  }, [otpCooldown]);
 
   // Load saved local private key / credential pass if available
   useEffect(() => {
@@ -402,6 +454,106 @@ export default function StudentHome({ onOpenPwaNotice }) {
     }
   };
 
+  // 1. Enroll WebAuthn Biometrics (Face ID / Touch ID / Windows Hello)
+  const handleEnrollWebAuthn = async () => {
+    if (!studentId || !studentInfo) {
+      alert('Please enter a valid Student ID first.');
+      return;
+    }
+
+    setIsEnrollingWebAuthn(true);
+    setWebAuthnError(null);
+    setWebAuthnSuccess(null);
+
+    try {
+      const { startRegistration } = await import('@simplewebauthn/browser');
+      const res = await axios.post('/api/auth/webauthn/register-options', {
+        student_id: studentId.trim()
+      });
+
+      const attResp = await startRegistration({ optionsJSON: res.data });
+
+      const verifyRes = await axios.post('/api/auth/webauthn/register-verify', {
+        student_id: studentId.trim(),
+        response: attResp
+      });
+
+      if (verifyRes.data.success) {
+        setHasWebAuthn(true);
+        setWebAuthnSuccess('Device platform biometrics registered successfully! You can now check in with 1-tap Face ID / Touch ID.');
+        setTimeout(() => setWebAuthnSuccess(null), 6000);
+      }
+    } catch (err) {
+      setWebAuthnError(err.message || 'WebAuthn enrollment was cancelled or failed.');
+    } finally {
+      setIsEnrollingWebAuthn(false);
+    }
+  };
+
+  // 2. Request Email OTP (Fallback Path)
+  const handleRequestOtp = async () => {
+    if (!studentId || !studentInfo) {
+      alert('Please enter a valid Student ID first.');
+      return;
+    }
+
+    setOtpSending(true);
+    setOtpError(null);
+    try {
+      const res = await axios.post('/api/auth/otp/request', {
+        student_id: studentId.trim()
+      });
+      setOtpSent(true);
+      setMaskedEmail(res.data.maskedEmail);
+      setOtpCooldown(60);
+      if (res.data.devCode) {
+        setOtpDevCode(res.data.devCode);
+      }
+    } catch (err) {
+      setOtpError(err.response?.data?.error || err.message);
+    } finally {
+      setOtpSending(false);
+    }
+  };
+
+  // 3. Verify Email OTP Code
+  const handleVerifyOtp = async () => {
+    if (!otpInput || otpInput.trim().length !== 6) {
+      setOtpError('Please enter a 6-digit numeric OTP code.');
+      return null;
+    }
+
+    setOtpError(null);
+    try {
+      const res = await axios.post('/api/auth/otp/verify', {
+        student_id: studentId.trim(),
+        code: otpInput.trim()
+      });
+      setVerifiedOtpToken(res.data.token);
+      return res.data.token;
+    } catch (err) {
+      setOtpError(err.response?.data?.error || err.message);
+      return null;
+    }
+  };
+
+  // 4. Biometric Scan helper for attendance submission
+  const performBiometricCheckin = async () => {
+    const { startAuthentication } = await import('@simplewebauthn/browser');
+    const res = await axios.post('/api/auth/webauthn/login-options', {
+      student_id: studentId.trim()
+    });
+
+    const authResp = await startAuthentication({ optionsJSON: res.data });
+
+    const verifyRes = await axios.post('/api/auth/webauthn/login-verify', {
+      student_id: studentId.trim(),
+      response: authResp
+    });
+
+    return verifyRes.data.token;
+  };
+
   // 1-Click Issue & Enroll Ed25519 Student Keypair
   const handleEnrollKeypair = async () => {
     if (!studentId || !studentInfo) {
@@ -456,6 +608,35 @@ export default function StudentHome({ onOpenPwaNotice }) {
     setSubmissionError(null);
     setSubmissionResult(null);
 
+    let authToken = null;
+    let authMethodToUse = authMode;
+
+    // Step A: Perform Authentication Challenge
+    if (authMode === 'webauthn') {
+      if (hasWebAuthn) {
+        try {
+          authToken = await performBiometricCheckin();
+        } catch (err) {
+          setSubmitting(false);
+          setSubmissionError('Biometric verification cancelled or failed: ' + err.message + '. You can switch to Email OTP verification.');
+          return;
+        }
+      } else {
+        authMethodToUse = 'signed_credential';
+      }
+    } else if (authMode === 'email_otp') {
+      if (verifiedOtpToken) {
+        authToken = verifiedOtpToken;
+      } else {
+        const token = await handleVerifyOtp();
+        if (!token) {
+          setSubmitting(false);
+          return;
+        }
+        authToken = token;
+      }
+    }
+
     let submitLat = coords?.lat || (activeEvent ? activeEvent.center_lat : 18.1960);
     let submitLng = coords?.lng || (activeEvent ? activeEvent.center_lng : 120.5927);
     let submitAcc = accuracy || 5;
@@ -480,10 +661,17 @@ export default function StudentHome({ onOpenPwaNotice }) {
         accuracy: submitAcc,
         timestamp: new Date().toISOString(),
         motionData: submitMotion,
+        auth_method: authMethodToUse,
+        auth_token: authToken,
         signature: credentialPass?.signature
       });
 
       setSubmissionResult(res.data);
+      if (authMode === 'email_otp') {
+        setVerifiedOtpToken(null);
+        setOtpSent(false);
+        setOtpInput('');
+      }
     } catch (err) {
       if (err.response?.data) {
         setSubmissionResult(err.response.data);
@@ -756,33 +944,71 @@ export default function StudentHome({ onOpenPwaNotice }) {
         )}
       </div>
 
-      {/* Step 2: Credential-Based Authentication (Replacing Device Biometrics) */}
+      {/* Step 2: Primary WebAuthn Biometrics & Email OTP Fallback Authentication */}
       <div className="glass-card rounded-2xl p-4 sm:p-6 space-y-4 border border-slate-800">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-3">
             <div className="p-3 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
               <Key className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-white">2. Signed Credential Authentication</h2>
-              <p className="text-xs text-slate-400">Cryptographic Ed25519 Key Pair (No biometric sensor lock-in).</p>
+              <h2 className="text-base font-bold text-white">2. Biometric & Identity Verification</h2>
+              <p className="text-xs text-slate-400">WebAuthn Platform Biometrics (Primary) or University Email OTP (Fallback).</p>
             </div>
           </div>
 
-          {studentInfo?.hasKeyEnrolled ? (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              <ShieldCheck className="w-3.5 h-3.5" />
-              Enrolled
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
-              <AlertTriangle className="w-3.5 h-3.5" />
-              Pass Pending
-            </span>
-          )}
+          <div className="flex items-center gap-1.5">
+            {authMode === 'webauthn' ? (
+              hasWebAuthn ? (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  Biometrics Enrolled
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  Enrollment Needed
+                </span>
+              )
+            ) : (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                <Mail className="w-3.5 h-3.5" />
+                Email OTP Mode
+              </span>
+            )}
+          </div>
         </div>
 
-        <div className="space-y-2">
+        {/* Auth Method Tabs */}
+        <div className="flex items-center gap-2 p-1 rounded-xl bg-slate-900/90 border border-slate-800">
+          <button
+            type="button"
+            onClick={() => setAuthMode('webauthn')}
+            className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+              authMode === 'webauthn'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Fingerprint className="w-4 h-4" />
+            <span>WebAuthn Biometrics (Primary)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setAuthMode('email_otp')}
+            className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+              authMode === 'email_otp'
+                ? 'bg-cyan-600 text-white shadow-md shadow-cyan-600/30'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Mail className="w-4 h-4" />
+            <span>Email OTP (Fallback)</span>
+          </button>
+        </div>
+
+        <div className="space-y-3">
           <div className="flex items-center justify-between">
             <label className="text-xs font-medium text-slate-300">Student ID Number</label>
             <span className="text-[11px] font-mono text-indigo-400">Format: xx-xxxxxx</span>
@@ -800,7 +1026,7 @@ export default function StudentHome({ onOpenPwaNotice }) {
 
           {/* Student Info Preview */}
           {studentInfo && (
-            <div className="p-3.5 rounded-xl bg-indigo-950/40 border border-indigo-500/20 space-y-2 text-xs text-slate-300">
+            <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-3 text-xs text-slate-300">
               <div className="font-bold text-white text-sm flex items-center justify-between">
                 <span>{studentInfo.name}</span>
                 <span className="text-[10px] font-normal px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300">
@@ -809,56 +1035,162 @@ export default function StudentHome({ onOpenPwaNotice }) {
               </div>
               <p className="text-slate-400">{studentInfo.course} • {studentInfo.college}</p>
 
-              {/* Cryptographic Key Status and Actions */}
-              <div className="pt-2 border-t border-indigo-900/40 flex flex-wrap items-center justify-between gap-2">
-                {studentInfo.hasKeyEnrolled ? (
-                  <div className="flex items-center gap-2 text-emerald-400 text-xs">
-                    <CheckCircle className="w-4 h-4 shrink-0" />
-                    <span>Public Key registered on server</span>
-                  </div>
-                ) : (
-                  <div className="text-amber-300 text-xs">
-                    No key enrolled yet for this student.
-                  </div>
-                )}
+              {/* Mode A: WebAuthn Platform Biometrics Card */}
+              {authMode === 'webauthn' && (
+                <div className="pt-3 border-t border-slate-800 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <Fingerprint className={`w-5 h-5 ${hasWebAuthn ? 'text-emerald-400' : 'text-amber-400'}`} />
+                      <div>
+                        <strong className="text-white block text-xs">
+                          {hasWebAuthn ? 'Native Device Biometrics Enrolled' : 'Platform Biometrics Not Yet Enrolled'}
+                        </strong>
+                        <span className="text-[11px] text-slate-400">
+                          {hasWebAuthn ? 'Touch ID / Face ID / Windows Hello is active' : 'Click below to bind this device with Face ID / Fingerprint'}
+                        </span>
+                      </div>
+                    </div>
 
-                <div className="flex items-center gap-2">
-                  {!studentInfo.hasKeyEnrolled ? (
-                    <button
-                      onClick={handleEnrollKeypair}
-                      disabled={isEnrollingKey}
-                      className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-                    >
-                      <Zap className="w-3.5 h-3.5" />
-                      <span>{isEnrollingKey ? 'Generating...' : 'Issue & Enroll Pass'}</span>
-                    </button>
-                  ) : (
-                    <>
+                    {!hasWebAuthn ? (
                       <button
-                        onClick={() => setShowQrModal(true)}
-                        className="px-3 py-1.5 rounded-lg bg-indigo-900/60 hover:bg-indigo-800 text-indigo-300 border border-indigo-700/50 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                        type="button"
+                        onClick={handleEnrollWebAuthn}
+                        disabled={isEnrollingWebAuthn}
+                        className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-indigo-600/30 transition-all cursor-pointer"
                       >
-                        <QrCode className="w-3.5 h-3.5" />
-                        <span>Present QR Pass</span>
+                        <ShieldCheck className="w-3.5 h-3.5" />
+                        <span>{isEnrollingWebAuthn ? 'Scanning Sensor...' : 'Register Device Biometrics'}</span>
                       </button>
-                      <button
-                        onClick={handleDownloadPass}
-                        className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 transition-colors cursor-pointer"
-                        title="Download Pass JSON"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                      </button>
-                    </>
+                    ) : (
+                      <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold text-[11px]">
+                        Ready to Time In/Out ✅
+                      </span>
+                    )}
+                  </div>
+
+                  {webAuthnSuccess && (
+                    <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs flex items-center gap-1.5">
+                      <CheckCircle className="w-4 h-4 shrink-0" />
+                      <span>{webAuthnSuccess}</span>
+                    </div>
                   )}
+
+                  {webAuthnError && (
+                    <div className="p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <AlertCircle className="w-4 h-4 shrink-0" />
+                        <span>{webAuthnError}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setAuthMode('email_otp')}
+                        className="text-cyan-400 underline font-bold cursor-pointer"
+                      >
+                        Use Email OTP
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Mode B: Email One-Time-Passcode (OTP) Fallback Card */}
+              {authMode === 'email_otp' && (
+                <div className="pt-3 border-t border-slate-800 space-y-3">
+                  <div className="p-3 rounded-xl bg-cyan-950/30 border border-cyan-500/20 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="space-y-0.5">
+                        <span className="text-[10px] uppercase font-bold text-cyan-400 block">Registered University Email</span>
+                        <strong className="text-white text-xs font-mono">
+                          {maskedEmail || studentInfo.email || `${studentInfo.student_id.toLowerCase()}@mmsu.edu.ph`}
+                        </strong>
+                        <p className="text-[10px] text-slate-400">Non-editable • Pulled from verified university student roster.</p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleRequestOtp}
+                        disabled={otpSending || otpCooldown > 0}
+                        className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                      >
+                        <Mail className="w-3.5 h-3.5" />
+                        <span>{otpSending ? 'Sending...' : otpCooldown > 0 ? `Resend in ${otpCooldown}s` : (otpSent ? 'Resend Code' : 'Send 6-Digit OTP')}</span>
+                      </button>
+                    </div>
+
+                    {otpDevCode && (
+                      <div className="p-2 rounded bg-slate-900 border border-cyan-500/30 text-[11px] text-cyan-300 font-mono flex items-center justify-between">
+                        <span>🧪 Local Demo Verification Code:</span>
+                        <strong className="text-white font-bold text-sm tracking-widest">{otpDevCode}</strong>
+                      </div>
+                    )}
+                  </div>
+
+                  {otpSent && (
+                    <div className="space-y-2">
+                      <label className="text-[11px] font-bold text-slate-300 block">
+                        Enter 6-Digit Email Verification Code
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={otpInput}
+                          onChange={(e) => setOtpInput(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
+                          placeholder="••••••"
+                          maxLength={6}
+                          className="w-40 px-3 py-2 rounded-xl bg-slate-950 border border-cyan-500/40 text-center font-mono text-lg tracking-widest text-white focus:outline-none focus:border-cyan-400"
+                        />
+
+                        <button
+                          type="button"
+                          onClick={handleVerifyOtp}
+                          className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-md shadow-cyan-600/20"
+                        >
+                          <CheckCircle className="w-3.5 h-3.5" />
+                          <span>Verify Code</span>
+                        </button>
+                      </div>
+
+                      {verifiedOtpToken && (
+                        <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs flex items-center gap-1.5">
+                          <CheckCircle className="w-4 h-4 shrink-0" />
+                          <span>Email OTP verified successfully! You can now submit your Time In / Time Out below.</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {otpError && (
+                    <div className="p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-center gap-1.5">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      <span>{otpError}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* QR Pass Download & Presentation (Backwards-compatibility) */}
+              <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
+                <span>Portable Credential Pass:</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowQrModal(true)}
+                    className="text-indigo-400 hover:underline cursor-pointer flex items-center gap-1 font-semibold"
+                  >
+                    <QrCode className="w-3.5 h-3.5" />
+                    <span>View QR Pass</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadPass}
+                    className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
+                    title="Download Pass JSON"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
 
-              {keyEnrollSuccess && (
-                <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs flex items-center gap-1.5">
-                  <CheckCircle className="w-4 h-4 shrink-0" />
-                  <span>{keyEnrollSuccess}</span>
-                </div>
-              )}
             </div>
           )}
         </div>
@@ -1061,17 +1393,31 @@ export default function StudentHome({ onOpenPwaNotice }) {
           <button
             onClick={handleSubmitAttendance}
             disabled={submitting || !coords || !studentInfo || !activeEvent}
-            className="w-full py-4 px-6 rounded-2xl font-bold text-sm bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white shadow-xl shadow-indigo-600/25 flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            className={`w-full py-4 px-6 rounded-2xl font-bold text-sm text-white shadow-xl flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${
+              authMode === 'email_otp'
+                ? 'bg-gradient-to-r from-cyan-600 via-teal-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 shadow-cyan-600/25'
+                : 'bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 shadow-indigo-600/25'
+            }`}
           >
             {submitting ? (
               <span className="flex items-center gap-2">
                 <RefreshCw className="w-4 h-4 animate-spin" />
-                Signing Attendance Payload & Verifying Telemetry...
+                {authMode === 'webauthn' && hasWebAuthn ? 'Awaiting Biometric Sensor Scan...' : 'Verifying Identity & Telemetry...'}
               </span>
             ) : (
               <>
-                <Zap className="w-5 h-5 fill-white text-white" />
-                <span>Submit Signed Time In / Time Out</span>
+                {authMode === 'email_otp' ? (
+                  <Mail className="w-5 h-5 fill-white text-white" />
+                ) : (
+                  <Fingerprint className="w-5 h-5 text-white" />
+                )}
+                <span>
+                  {authMode === 'email_otp'
+                    ? 'Verify Email OTP & Record Attendance'
+                    : hasWebAuthn
+                    ? 'Scan Biometrics & Record Attendance'
+                    : 'Submit Signed Attendance (Biometrics Recommended)'}
+                </span>
               </>
             )}
           </button>
@@ -1095,9 +1441,9 @@ export default function StudentHome({ onOpenPwaNotice }) {
               <span>{submissionResult.message}</span>
             </div>
 
-            {submissionResult.credentialAuth && (
+            {submissionResult.authVerification && (
               <div className="pt-1.5 border-t border-slate-800 text-[11px] text-slate-300">
-                Signature Verification: <strong className={submissionResult.credentialAuth.signatureValid ? 'text-emerald-400' : 'text-amber-400'}>{submissionResult.credentialAuth.signatureValid ? 'Valid Ed25519 Signature' : 'No Signature Presented'}</strong>
+                Identity Auth: <strong className="text-emerald-400 font-semibold">{submissionResult.authVerification.modeDescription}</strong>
               </div>
             )}
 

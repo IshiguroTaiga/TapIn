@@ -23,12 +23,69 @@ router.post('/submit', (req, res) => {
     });
   }
 
-  // 2. Cryptographic Credential Signature Verification (Replacing device biometrics)
+  // 2. Multi-Mode Authentication Verification (WebAuthn Biometrics, Email OTP Fallback, or Ed25519)
+  const { auth_method, auth_token, webauthn_response, otp_code } = req.body;
   let signatureValid = 1;
   let signatureChecked = false;
   let signatureError = null;
+  let resolvedAuthMethod = auth_method || 'webauthn';
 
-  if (student.public_key) {
+  const webauthnCreds = db.prepare(`SELECT * FROM webauthn_credentials WHERE student_id = ?`).all(student.student_id);
+
+  if (resolvedAuthMethod === 'webauthn') {
+    if (webauthnCreds.length > 0) {
+      signatureChecked = true;
+      if (auth_token) {
+        try {
+          const { JWT_SECRET } = require('../middleware/auth');
+          const jwt = require('jsonwebtoken');
+          const decoded = jwt.verify(auth_token, JWT_SECRET);
+          if (decoded.student_id !== student.student_id) {
+            signatureValid = 0;
+            signatureError = 'WebAuthn biometric token student mismatch.';
+          }
+        } catch (err) {
+          signatureValid = 0;
+          signatureError = 'WebAuthn biometric session expired or invalid. Please scan Face ID / Fingerprint again.';
+        }
+      } else if (webauthn_response) {
+        try {
+          const { verifyWebAuthnAuthentication } = require('../services/webauthnService');
+          const result = verifyWebAuthnAuthentication(student.student_id, webauthn_response, req);
+          if (!result.verified) {
+            signatureValid = 0;
+            signatureError = 'WebAuthn platform biometric verification failed.';
+          }
+        } catch (err) {
+          signatureValid = 0;
+          signatureError = err.message;
+        }
+      }
+    }
+  } else if (resolvedAuthMethod === 'email_otp') {
+    signatureChecked = true;
+    if (auth_token) {
+      try {
+        const { JWT_SECRET } = require('../middleware/auth');
+        const jwt = require('jsonwebtoken');
+        const decoded = jwt.verify(auth_token, JWT_SECRET);
+        if (decoded.student_id !== student.student_id || decoded.auth_method !== 'email_otp') {
+          signatureValid = 0;
+          signatureError = 'Email OTP verification token mismatch.';
+        }
+      } catch (err) {
+        signatureValid = 0;
+        signatureError = 'Email OTP verification session expired. Please enter a fresh code.';
+      }
+    } else if (otp_code) {
+      const { verifyEmailOtp } = require('../services/otpService');
+      const otpRes = verifyEmailOtp(student.student_id, otp_code);
+      if (!otpRes.isValid) {
+        signatureValid = 0;
+        signatureError = otpRes.reason;
+      }
+    }
+  } else if (student.public_key) {
     signatureChecked = true;
     if (!signature) {
       signatureValid = 0;
@@ -156,8 +213,8 @@ router.post('/submit', (req, res) => {
   const logTimestamp = timestamp || new Date().toISOString();
   const insertStmt = db.prepare(`
     INSERT INTO attendance_logs 
-    (event_id, student_id, action, lat, lng, accuracy, timestamp, in_range, trust_score, is_spoofed, spoof_flags, status, signature_valid, signature_payload)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    (event_id, student_id, action, lat, lng, accuracy, timestamp, in_range, trust_score, is_spoofed, spoof_flags, status, signature_valid, signature_payload, auth_method)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   insertStmt.run(
@@ -174,12 +231,14 @@ router.post('/submit', (req, res) => {
     spoofEval.flags.join(','),
     status,
     signatureValid,
-    signature ? String(signature).substring(0, 128) : null
+    signature ? String(signature).substring(0, 128) : (auth_token ? 'AUTH_TOKEN_VERIFIED' : null),
+    resolvedAuthMethod
   );
 
   const responsePayload = {
     success: !rejected,
     action,
+    authMethod: resolvedAuthMethod,
     student: {
       student_id: student.student_id,
       name: student.name,
@@ -187,13 +246,16 @@ router.post('/submit', (req, res) => {
       course: student.course,
       college: student.college,
       section: student.section || 'A',
-      hasKeyEnrolled: !!student.public_key
+      hasKeyEnrolled: !!student.public_key,
+      hasWebAuthn: webauthnCreds.length > 0
     },
-    credentialAuth: {
-      enrolled: !!student.public_key,
+    authVerification: {
+      authMethod: resolvedAuthMethod,
       signatureChecked,
       signatureValid: signatureValid === 1,
-      cryptography: 'Ed25519 Public-Key Digital Signature (Zero Device-Biometric Storage)'
+      modeDescription: resolvedAuthMethod === 'webauthn' 
+        ? 'FIDO2 / WebAuthn Platform Biometrics (Face ID/Touch ID/Windows Hello)' 
+        : (resolvedAuthMethod === 'email_otp' ? 'University Email 6-Digit One-Time-Passcode (OTP)' : 'Ed25519 Cryptographic Signature')
     },
     event: {
       id: activeEvent.id,

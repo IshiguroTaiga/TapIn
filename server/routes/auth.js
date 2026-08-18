@@ -123,4 +123,161 @@ router.delete('/admins/:id', authenticateToken, requireRole(['superadmin']), (re
   res.json({ message: 'Admin account deleted successfully' });
 });
 
+// ============================================================================
+// 1. WebAuthn Biometric Platform Authentication Endpoints
+// ============================================================================
+const {
+  getWebAuthnRegistrationOptions,
+  verifyWebAuthnRegistration,
+  getWebAuthnAuthenticationOptions,
+  verifyWebAuthnAuthentication
+} = require('../services/webauthnService');
+
+// Get WebAuthn Registration Options (Enrollment challenge)
+router.post('/webauthn/register-options', async (req, res) => {
+  const { student_id } = req.body;
+  if (!student_id) {
+    return res.status(400).json({ error: 'Student ID is required' });
+  }
+
+  const student = db.prepare(`SELECT * FROM students WHERE student_id = ?`).get(String(student_id).trim());
+  if (!student) {
+    return res.status(404).json({ error: `Student ID #${student_id} not found in student roster.` });
+  }
+
+  try {
+    const options = await getWebAuthnRegistrationOptions(student, req);
+    res.json(options);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to generate WebAuthn registration options: ' + err.message });
+  }
+});
+
+// Verify WebAuthn Registration and Store Platform Credential
+router.post('/webauthn/register-verify', async (req, res) => {
+  const { student_id, response } = req.body;
+  if (!student_id || !response) {
+    return res.status(400).json({ error: 'Student ID and WebAuthn credential response are required' });
+  }
+
+  try {
+    const result = await verifyWebAuthnRegistration(String(student_id).trim(), response, req);
+    res.json({
+      success: true,
+      message: 'Biometric device credential enrolled successfully!',
+      result
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Check if Student has registered WebAuthn platform biometrics on file
+router.get('/webauthn/status/:studentId', (req, res) => {
+  const { studentId } = req.params;
+  const creds = db.prepare(`
+    SELECT credential_id, device_label, registered_at 
+    FROM webauthn_credentials 
+    WHERE student_id = ?
+  `).all(String(studentId).trim());
+
+  res.json({
+    student_id: studentId,
+    has_webauthn: creds.length > 0,
+    credentials: creds
+  });
+});
+
+// Get WebAuthn Authentication Options (Check-in Challenge)
+router.post('/webauthn/login-options', async (req, res) => {
+  const { student_id } = req.body;
+  if (!student_id) {
+    return res.status(400).json({ error: 'Student ID is required' });
+  }
+
+  try {
+    const options = await getWebAuthnAuthenticationOptions(String(student_id).trim(), req);
+    res.json(options);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Verify WebAuthn Authentication (Biometric check-in verification)
+router.post('/webauthn/login-verify', async (req, res) => {
+  const { student_id, response } = req.body;
+  if (!student_id || !response) {
+    return res.status(400).json({ error: 'Student ID and biometric response are required' });
+  }
+
+  try {
+    const result = await verifyWebAuthnAuthentication(String(student_id).trim(), response, req);
+    
+    // Generate single-use JWT verification token for attendance submission
+    const authToken = jwt.sign(
+      {
+        student_id: String(student_id).trim(),
+        auth_method: 'webauthn',
+        credential_id: result.credentialId,
+        verified_at: new Date().toISOString()
+      },
+      JWT_SECRET,
+      { expiresIn: '15m' }
+    );
+
+    res.json({
+      success: true,
+      auth_method: 'webauthn',
+      token: authToken,
+      result
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// ============================================================================
+// 2. Email One-Time-Passcode (OTP) Fallback Endpoints
+// ============================================================================
+const { requestEmailOtp, verifyEmailOtp } = require('../services/otpService');
+
+// Request 6-Digit Email OTP (With Rate Limiting)
+router.post('/otp/request', async (req, res) => {
+  const { student_id } = req.body;
+  if (!student_id) {
+    return res.status(400).json({ error: 'Student ID is required' });
+  }
+
+  try {
+    const result = await requestEmailOtp(String(student_id).trim());
+    res.json(result);
+  } catch (err) {
+    res.status(429).json({ error: err.message });
+  }
+});
+
+// Verify 6-Digit Email OTP (With Brute-Force Protection)
+router.post('/otp/verify', (req, res) => {
+  const { student_id, code } = req.body;
+  if (!student_id || !code) {
+    return res.status(400).json({ error: 'Student ID and 6-digit OTP code are required' });
+  }
+
+  const result = verifyEmailOtp(String(student_id).trim(), code);
+  if (!result.isValid) {
+    return res.status(400).json({
+      error: result.reason,
+      remainingAttempts: result.remainingAttempts
+    });
+  }
+
+  res.json({
+    success: true,
+    auth_method: 'email_otp',
+    token: result.token,
+    student_id: result.studentId
+  });
+});
+
 module.exports = router;
+

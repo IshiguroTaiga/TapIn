@@ -3,6 +3,32 @@
 
 ---
 
+## 📌 Version 4.1 (WebAuthn Primary Platform Biometrics & Email OTP Fallback Architecture)
+
+### 🚀 What Has Been Updated & Implemented
+
+#### 1. 🔐 WebAuthn Biometric Platform Authentication (`server/services/webauthnService.js`, `server/routes/auth.js`)
+- **Native Browser Standard**: Leverages the official W3C WebAuthn standard (`navigator.credentials.create()` and `navigator.credentials.get()`) backed by `@simplewebauthn/server` and `@simplewebauthn/browser`.
+- **Platform Authenticator Gating**: Restricts authenticators to device hardware secure enclaves (`authenticatorAttachment: 'platform'`, `userVerification: 'required'`) using **Touch ID / Face ID / Windows Hello / Android Biometrics**.
+- **Server-Side FIDO2 Verification**:
+  - Challenge registration: `POST /api/auth/webauthn/register-options` & `POST /api/auth/webauthn/register-verify`.
+  - Credentials stored in SQLite `webauthn_credentials` (storing `credential_id`, base64 `public_key`, signature `counter`, `device_label`, and `registered_at`).
+  - Attendance check-in challenge: `POST /api/auth/webauthn/login-options` & `POST /api/auth/webauthn/login-verify`.
+  - Authenticated sessions issue verified single-use cryptographic tokens bound to the student ID.
+
+#### 2. ✉️ Email One-Time-Passcode (OTP) Fallback (`server/services/otpService.js`, `server/routes/auth.js`)
+- **Fallback Activation**: Available when a student checks in from an unsupported device, borrowed browser, or kiosk without registered platform biometrics.
+- **Strict Data Integrity**: Student email addresses are pulled **directly from verified university records on file** (e.g. `23-140015@mmsu.edu.ph`) and cannot be manipulated or edited by the client.
+- **Security & Rate Limiting**:
+  - 6-digit numeric OTP with SHA-256 salted hashing in `otp_codes` table.
+  - Strict 5-minute expiry timestamp.
+  - Single-use consumption on successful verification.
+  - **Rate Limiting**: Max 3 OTP generation requests per student per 10-minute window.
+  - **Brute-Force Protection**: Max 5 verification attempts per issued code before immediate invalidation.
+- **Pluggable Nodemailer Transport**: Configurable with production SMTP (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`) with automatic console logging in development.
+
+---
+
 ## 📌 Version 4.0 (Credential Authentication, Stationary Spoof Anomaly & Multi-Checkpoint Task Verification)
 
 ### 🚀 What Has Been Updated & Implemented

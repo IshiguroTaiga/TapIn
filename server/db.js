@@ -171,6 +171,36 @@ function initDb() {
       default_penalty TEXT DEFAULT 'Warning'
     );
 
+    CREATE TABLE IF NOT EXISTS webauthn_credentials (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      student_id TEXT NOT NULL,
+      credential_id TEXT UNIQUE NOT NULL,
+      public_key TEXT NOT NULL,
+      counter INTEGER DEFAULT 0,
+      transports TEXT,
+      device_label TEXT,
+      registered_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (student_id) REFERENCES students(student_id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS webauthn_challenges (
+      student_id TEXT PRIMARY KEY,
+      challenge TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS otp_codes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      student_id TEXT NOT NULL,
+      hashed_code TEXT NOT NULL,
+      expires_at DATETIME NOT NULL,
+      used INTEGER DEFAULT 0,
+      attempt_count INTEGER DEFAULT 0,
+      max_attempts INTEGER DEFAULT 5,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (student_id) REFERENCES students(student_id) ON DELETE CASCADE
+    );
+
     CREATE INDEX IF NOT EXISTS idx_logs_event_student ON attendance_logs (event_id, student_id);
     CREATE INDEX IF NOT EXISTS idx_logs_event_timestamp ON attendance_logs (event_id, timestamp DESC);
     CREATE INDEX IF NOT EXISTS idx_events_status ON events (status);
@@ -178,17 +208,26 @@ function initDb() {
     CREATE INDEX IF NOT EXISTS idx_checkpoints_event ON event_checkpoints (event_id);
     CREATE INDEX IF NOT EXISTS idx_tasks_checkpoint ON checkpoint_tasks (checkpoint_id);
     CREATE INDEX IF NOT EXISTS idx_assignments_student ON student_task_assignments (event_id, checkpoint_id, student_id);
+    CREATE INDEX IF NOT EXISTS idx_webauthn_student ON webauthn_credentials (student_id);
+    CREATE INDEX IF NOT EXISTS idx_otp_student ON otp_codes (student_id, expires_at);
   `);
 
   // Safe table migrations for existing database schemas
+  try { db.exec(`ALTER TABLE students ADD COLUMN email TEXT;`); } catch (e) {}
   try { db.exec(`ALTER TABLE students ADD COLUMN public_key TEXT;`); } catch (e) {}
   try { db.exec(`ALTER TABLE students ADD COLUMN key_enrolled_at DATETIME;`); } catch (e) {}
   try { db.exec(`ALTER TABLE events ADD COLUMN allow_duplicate_tasks INTEGER DEFAULT 0;`); } catch (e) {}
   try { db.exec(`ALTER TABLE events ADD COLUMN randomize_tasks INTEGER DEFAULT 0;`); } catch (e) {}
   try { db.exec(`ALTER TABLE events ADD COLUMN task_collision_window_minutes INTEGER DEFAULT 10;`); } catch (e) {}
   try { db.exec(`ALTER TABLE events ADD COLUMN max_checkpoints INTEGER DEFAULT 3;`); } catch (e) {}
+  try { db.exec(`ALTER TABLE attendance_logs ADD COLUMN auth_method TEXT DEFAULT 'webauthn';`); } catch (e) {}
   try { db.exec(`ALTER TABLE attendance_logs ADD COLUMN signature_valid INTEGER DEFAULT 1;`); } catch (e) {}
   try { db.exec(`ALTER TABLE attendance_logs ADD COLUMN signature_payload TEXT;`); } catch (e) {}
+
+  // Populate default university emails for existing students missing an email
+  try {
+    db.exec(`UPDATE students SET email = LOWER(student_id) || '@mmsu.edu.ph' WHERE email IS NULL OR email = '';`);
+  } catch (e) {}
 
   // Seed default system settings
   try {
