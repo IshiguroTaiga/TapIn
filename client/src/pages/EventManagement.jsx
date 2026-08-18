@@ -117,7 +117,12 @@ export default function EventManagement() {
     setCustomEventId(String(event.id));
     setName(event.name);
     setDescription(event.description || '');
-    setPolygonCoordinates(event.polygon_coordinates || [
+    
+    let poly = event.polygon_coordinates;
+    if (typeof poly === 'string') {
+      try { poly = JSON.parse(poly); } catch (e) { poly = []; }
+    }
+    setPolygonCoordinates(Array.isArray(poly) && poly.length >= 3 ? poly : [
       [18.1960, 120.5920],
       [18.1972, 120.5920],
       [18.1972, 120.5936],
@@ -138,18 +143,28 @@ export default function EventManagement() {
   const handleOpenCheckpointsModal = async (event) => {
     setActiveCheckpointEvent(event);
     setCheckpointError(null);
+    setCheckpointsList(event.checkpoints || []);
+    setAllowDuplicateTasks(Boolean(event.allow_duplicate_tasks));
+    setRandomizeTasks(Boolean(event.randomize_tasks));
+    setTaskCollisionWindowMinutes(event.task_collision_window_minutes || 10);
+    if (event.checkpoints?.length > 0) {
+      setSelectedCheckpointForTask(event.checkpoints[0].id);
+    }
+    setShowCheckpointsModal(true);
+
     try {
       const res = await axios.get(`/api/checkpoints/event/${event.id}`);
-      setCheckpointsList(res.data.checkpoints || []);
-      setAllowDuplicateTasks(res.data.allowDuplicateTasks);
-      setRandomizeTasks(res.data.randomizeTasks);
-      setTaskCollisionWindowMinutes(res.data.taskCollisionWindowMinutes || 10);
-      if (res.data.checkpoints?.length > 0) {
-        setSelectedCheckpointForTask(res.data.checkpoints[0].id);
+      if (res.data) {
+        setCheckpointsList(res.data.checkpoints || []);
+        setAllowDuplicateTasks(Boolean(res.data.allowDuplicateTasks));
+        setRandomizeTasks(Boolean(res.data.randomizeTasks));
+        setTaskCollisionWindowMinutes(res.data.taskCollisionWindowMinutes || 10);
+        if (res.data.checkpoints?.length > 0) {
+          setSelectedCheckpointForTask(res.data.checkpoints[0].id);
+        }
       }
-      setShowCheckpointsModal(true);
     } catch (err) {
-      alert('Failed to load checkpoints: ' + err.message);
+      console.warn('Could not sync remote checkpoints:', err.message);
     }
   };
 
@@ -744,11 +759,22 @@ export default function EventManagement() {
                 </label>
                 <GeofenceMapPicker
                   polygonCoordinates={polygonCoordinates}
+                  polygon={polygonCoordinates}
                   onPolygonChange={(poly, center, rad) => {
                     setPolygonCoordinates(poly);
-                    setCenterLat(center.lat);
-                    setCenterLng(center.lng);
-                    setRadiusMeters(rad);
+                    if (center) {
+                      setCenterLat(center.lat);
+                      setCenterLng(center.lng);
+                    }
+                    if (rad) setRadiusMeters(rad);
+                  }}
+                  onChangePolygon={(poly, center, rad) => {
+                    setPolygonCoordinates(poly);
+                    if (center) {
+                      setCenterLat(center.lat);
+                      setCenterLng(center.lng);
+                    }
+                    if (rad) setRadiusMeters(rad);
                   }}
                   centerLat={centerLat}
                   centerLng={centerLng}

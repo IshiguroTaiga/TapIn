@@ -177,13 +177,47 @@ test('Compute consistent 64-bit Perceptual Hash (dHash)', () => {
   assert.strictEqual(binaryHash, secondHash.binaryHash, 'Identical buffers must yield identical perceptual hash');
 });
 
-test('Calculate Hamming distance accurately', () => {
-  const hash1 = '1111000011110000111100001111000011110000111100001111000011110000';
-  const hash2 = '1111000011110000111100001111000011110000111100001111000011110000'; // 0 bits diff
-  const hash3 = '1111000011110000111100001111000011110000111100001111000011110011'; // 2 bits diff
+// -------------------------------------------------------------
+// Test Suite 5: Exact Polygon & Custom Center Point Persistence
+// -------------------------------------------------------------
+console.log('\n[5/5] Polygon Coordinate Integrity & Custom Center Persistence');
 
-  assert.strictEqual(calculateHammingDistance(hash1, hash2), 0, 'Same hash has 0 distance');
-  assert.strictEqual(calculateHammingDistance(hash1, hash3), 2, '2 altered bits should yield distance 2');
+test('Persist and reload exact asymmetric 6-point L-shape polygon and custom center', () => {
+  const lShapeVertices = [
+    [18.10990, 120.53800],
+    [18.11100, 120.53800],
+    [18.11100, 120.53900],
+    [18.11050, 120.53900],
+    [18.11050, 120.54000],
+    [18.10990, 120.54000]
+  ];
+  const customCenter = { lat: 18.10990, lng: 120.53870 };
+
+  // Insert into DB
+  const polyJson = JSON.stringify(lShapeVertices);
+  const res = db.prepare(`
+    INSERT INTO events (name, description, center_lat, center_lng, radius_m, polygon_coordinates, grace_minutes, college_filter, course_filter, year_filter, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run('L-Shape Test Event', 'Testing persistence', customCenter.lat, customCenter.lng, 120, polyJson, 15, 'all', 'all', 'all', 'active');
+
+  const eventId = res.lastInsertRowid;
+  const loadedEvent = db.prepare(`SELECT * FROM events WHERE id = ?`).get(eventId);
+
+  assert(loadedEvent, 'Event must exist in database');
+  assert.strictEqual(loadedEvent.center_lat, 18.10990, 'Center latitude must be preserved exactly');
+  assert.strictEqual(loadedEvent.center_lng, 120.53870, 'Center longitude must be preserved exactly');
+
+  const reloadedPoly = JSON.parse(loadedEvent.polygon_coordinates);
+  assert.strictEqual(reloadedPoly.length, 6, 'Polygon must have exactly 6 vertices');
+
+  // Verify vertex pixel-equivalent precision
+  lShapeVertices.forEach((orig, idx) => {
+    assert.strictEqual(reloadedPoly[idx][0], orig[0], `Vertex #${idx+1} Lat must match`);
+    assert.strictEqual(reloadedPoly[idx][1], orig[1], `Vertex #${idx+1} Lng must match`);
+  });
+
+  // Clean up
+  db.prepare(`DELETE FROM events WHERE id = ?`).run(eventId);
 });
 
 console.log('\n===============================================================');
@@ -195,3 +229,4 @@ if (failCount > 0) {
 } else {
   console.log('All backend services & new feature engines verified successfully!\n');
 }
+

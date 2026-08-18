@@ -158,11 +158,13 @@ function normalizePolygon(poly) {
 }
 
 export default function GeofenceMapPicker({
-  polygon = [],
+  polygon,
+  polygonCoordinates,
   centerLat,
   centerLng,
   radiusMeters,
-  onChangePolygon
+  onChangePolygon,
+  onPolygonChange
 }) {
   const mapContainerRef = useRef(null);
   const mapInstanceRef = useRef(null);
@@ -178,25 +180,27 @@ export default function GeofenceMapPicker({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [dragMode, setDragMode] = useState('entire_shape'); // Default: moving center moves entire border together
-  const [isCustomCenter, setIsCustomCenter] = useState(Boolean(centerLat && centerLng));
+  const [isCustomCenter, setIsCustomCenter] = useState(Boolean(centerLat !== undefined && centerLng !== undefined));
 
-  // Local polygon state
+  // Local polygon state — strictly use incoming polygon coordinates if 3+ points exist
   const [vertices, setVertices] = useState(() => {
-    const norm = normalizePolygon(polygon);
+    const raw = polygonCoordinates !== undefined ? polygonCoordinates : polygon;
+    const norm = normalizePolygon(raw);
     if (norm.length >= 3) {
       return norm;
     }
-    const cLat = centerLat ? parseFloat(centerLat) : ILOCOS_NORTE_CENTER[0];
-    const cLng = centerLng ? parseFloat(centerLng) : ILOCOS_NORTE_CENTER[1];
-    return generateHexagonAround(cLat, cLng, radiusMeters || 120);
+    const cLat = (centerLat !== undefined && !isNaN(parseFloat(centerLat))) ? parseFloat(centerLat) : ILOCOS_NORTE_CENTER[0];
+    const cLng = (centerLng !== undefined && !isNaN(parseFloat(centerLng))) ? parseFloat(centerLng) : ILOCOS_NORTE_CENTER[1];
+    return generateLShapeAround(cLat, cLng, radiusMeters || 120);
   });
 
   // Local center point state
   const [centerPoint, setCenterPoint] = useState(() => {
-    if (centerLat && centerLng) {
+    if (centerLat !== undefined && centerLng !== undefined && !isNaN(parseFloat(centerLat)) && !isNaN(parseFloat(centerLng))) {
       return { lat: parseFloat(centerLat), lng: parseFloat(centerLng) };
     }
-    const norm = normalizePolygon(polygon);
+    const raw = polygonCoordinates !== undefined ? polygonCoordinates : polygon;
+    const norm = normalizePolygon(raw);
     if (norm.length >= 3) {
       return calculateGeometricCentroid(norm);
     }
@@ -205,7 +209,7 @@ export default function GeofenceMapPicker({
 
   // Keep internal center in sync if prop changes externally (e.g. initial edit load)
   useEffect(() => {
-    if (centerLat && centerLng) {
+    if (centerLat !== undefined && centerLng !== undefined && !isNaN(parseFloat(centerLat)) && !isNaN(parseFloat(centerLng))) {
       const c = { lat: parseFloat(centerLat), lng: parseFloat(centerLng) };
       setCenterPoint(c);
       setIsCustomCenter(true);
@@ -214,11 +218,13 @@ export default function GeofenceMapPicker({
 
   // Sync external polygon prop updates
   useEffect(() => {
-    const norm = normalizePolygon(polygon);
+    const raw = polygonCoordinates !== undefined ? polygonCoordinates : polygon;
+    const norm = normalizePolygon(raw);
     if (norm.length >= 3) {
       const hash = JSON.stringify(norm);
       if (lastEmittedHashRef.current !== hash) {
         setVertices(norm);
+        lastEmittedHashRef.current = hash;
         if (polygonLayerRef.current) {
           polygonLayerRef.current.setLatLngs(norm);
         }
@@ -232,19 +238,22 @@ export default function GeofenceMapPicker({
         }
       }
     }
-  }, [JSON.stringify(polygon)]);
+  }, [JSON.stringify(polygonCoordinates !== undefined ? polygonCoordinates : polygon)]);
 
-  // Emit changes to parent safely with hash recording
+  // Emit changes to parent safely with hash recording (invokes both prop callback names)
   const emitChanges = useCallback((newVertices, newCenter) => {
     setVertices(newVertices);
     setCenterPoint(newCenter);
     lastEmittedHashRef.current = JSON.stringify(newVertices);
 
+    const maxRadius = calculateMaxRadiusFromCenter(newVertices, newCenter);
     if (onChangePolygon) {
-      const maxRadius = calculateMaxRadiusFromCenter(newVertices, newCenter);
       onChangePolygon(newVertices, newCenter, maxRadius);
     }
-  }, [onChangePolygon]);
+    if (onPolygonChange) {
+      onPolygonChange(newVertices, newCenter, maxRadius);
+    }
+  }, [onChangePolygon, onPolygonChange]);
 
   // Update vertices while preserving custom center point
   const updateVerticesOnly = useCallback((newVertices) => {
@@ -257,11 +266,14 @@ export default function GeofenceMapPicker({
       setCenterPoint(effectiveCenter);
     }
 
+    const maxRadius = calculateMaxRadiusFromCenter(newVertices, effectiveCenter);
     if (onChangePolygon) {
-      const maxRadius = calculateMaxRadiusFromCenter(newVertices, effectiveCenter);
       onChangePolygon(newVertices, effectiveCenter, maxRadius);
     }
-  }, [centerPoint, isCustomCenter, onChangePolygon]);
+    if (onPolygonChange) {
+      onPolygonChange(newVertices, effectiveCenter, maxRadius);
+    }
+  }, [centerPoint, isCustomCenter, onChangePolygon, onPolygonChange]);
 
   // Mutable refs for click handlers so map never re-attaches
   const onMapClickRef = useRef(null);
@@ -415,7 +427,6 @@ export default function GeofenceMapPicker({
       let initialVerticesOnDrag = null;
 
       centerMarker.on('dragstart', (e) => {
-        // Freeze map dragging so mobile finger drag doesn't move the map
         if (mapInstanceRef.current) mapInstanceRef.current.dragging.disable();
         dragStartCenter = e.target.getLatLng();
         initialVerticesOnDrag = [...vertices];
@@ -458,7 +469,6 @@ export default function GeofenceMapPicker({
       });
 
       centerMarker.on('dragend', (e) => {
-        // Re-enable map dragging
         if (mapInstanceRef.current) mapInstanceRef.current.dragging.enable();
 
         const newPos = e.target.getLatLng();
@@ -582,7 +592,7 @@ export default function GeofenceMapPicker({
 
       const marker = L.marker([lat, lng], {
         draggable: true,
-        autoPan: false, // Prevents camera jumps while dragging near edges
+        autoPan: false,
         icon: vertexIcon
       });
 
@@ -671,7 +681,7 @@ export default function GeofenceMapPicker({
     emitChanges(scaled, center);
   };
 
-  // Transform Actions: Rotate (15 degrees)
+  // Transform Actions: Rotate
   const handleRotateShape = (deg) => {
     if (vertices.length < 3) return;
     const center = centerPoint;
@@ -742,15 +752,29 @@ export default function GeofenceMapPicker({
       (pos) => {
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
-        const newCenter = { lat, lng };
+        const newCenter = { lat: Math.round(lat * 100000) / 100000, lng: Math.round(lng * 100000) / 100000 };
 
         if (mapInstanceRef.current) {
           mapInstanceRef.current.flyTo([lat, lng], 17);
         }
 
-        const lShape = generateLShapeAround(lat, lng, radiusMeters || 100);
         setIsCustomCenter(true);
-        emitChanges(lShape, newCenter);
+
+        if (vertices.length >= 3) {
+          // Shift existing custom polygon to the GPS location without regenerating/destroying the shape!
+          const oldCenter = centerPoint;
+          const dLat = newCenter.lat - oldCenter.lat;
+          const dLng = newCenter.lng - oldCenter.lng;
+          const shifted = vertices.map(([vLat, vLng]) => [
+            Math.round((vLat + dLat) * 100000) / 100000,
+            Math.round((vLng + dLng) * 100000) / 100000
+          ]);
+          emitChanges(shifted, newCenter);
+        } else {
+          // If no polygon exists yet, spawn L-shape template
+          const lShape = generateLShapeAround(newCenter.lat, newCenter.lng, radiusMeters || 120);
+          emitChanges(lShape, newCenter);
+        }
       },
       (err) => {
         alert('Could not retrieve current location: ' + err.message);

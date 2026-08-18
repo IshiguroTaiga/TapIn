@@ -21,12 +21,21 @@ const upload = multer({
 // 1. Get all checkpoints and task pools for an event
 router.get('/event/:eventId', (req, res) => {
   const { eventId } = req.params;
-  const event = db.prepare(`SELECT * FROM events WHERE id = ?`).get(eventId);
-  if (!event) return res.status(404).json({ error: 'Event not found' });
+  const event = db.prepare(`SELECT * FROM events WHERE id = ? OR CAST(id AS TEXT) = ?`).get(eventId, String(eventId));
+  if (!event) {
+    return res.json({
+      eventId: parseInt(eventId),
+      maxCheckpoints: 3,
+      allowDuplicateTasks: false,
+      randomizeTasks: false,
+      taskCollisionWindowMinutes: 10,
+      checkpoints: []
+    });
+  }
 
-  const checkpoints = getEventCheckpoints(eventId);
+  const checkpoints = getEventCheckpoints(event.id);
   res.json({
-    eventId: parseInt(eventId),
+    eventId: parseInt(event.id),
     maxCheckpoints: event.max_checkpoints || 3,
     allowDuplicateTasks: Boolean(event.allow_duplicate_tasks),
     randomizeTasks: Boolean(event.randomize_tasks),
@@ -40,7 +49,7 @@ router.post('/event/:eventId', authenticateToken, requireRole(['admin', 'superad
   const { eventId } = req.params;
   const { checkpoints, allowDuplicateTasks, randomizeTasks, taskCollisionWindowMinutes } = req.body;
 
-  const event = db.prepare(`SELECT * FROM events WHERE id = ?`).get(eventId);
+  const event = db.prepare(`SELECT * FROM events WHERE id = ? OR CAST(id AS TEXT) = ?`).get(eventId, String(eventId));
   if (!event) return res.status(404).json({ error: 'Event not found' });
 
   if (!Array.isArray(checkpoints)) {
