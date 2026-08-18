@@ -14,7 +14,17 @@ import {
   RefreshCw,
   Activity,
   Bell,
-  Smartphone
+  Smartphone,
+  Key,
+  QrCode,
+  Download,
+  Camera,
+  CheckSquare,
+  Award,
+  UploadCloud,
+  FileCheck,
+  Eye,
+  X
 } from 'lucide-react';
 
 function normalizePolygon(poly) {
@@ -74,8 +84,38 @@ export default function StudentHome({ onOpenPwaNotice }) {
   const [submissionResult, setSubmissionResult] = useState(null);
   const [submissionError, setSubmissionError] = useState(null);
 
+  // Cryptographic Credential State
+  const [credentialPass, setCredentialPass] = useState(null);
+  const [isEnrollingKey, setIsEnrollingKey] = useState(false);
+  const [showQrModal, setShowQrModal] = useState(false);
+  const [keyEnrollSuccess, setKeyEnrollSuccess] = useState(null);
+
+  // Checkpoints & Task Distribution State
+  const [checkpointProximity, setCheckpointProximity] = useState(null);
+  const [activeTaskAssignment, setActiveTaskAssignment] = useState(null);
+  const [taskPhotoFile, setTaskPhotoFile] = useState(null);
+  const [taskPhotoPreview, setTaskPhotoPreview] = useState(null);
+  const [taskAnswerText, setTaskAnswerText] = useState('');
+  const [submittingTask, setSubmittingTask] = useState(false);
+  const [taskSubmissionResult, setTaskSubmissionResult] = useState(null);
+  const [studentVisits, setStudentVisits] = useState([]);
+  const [checkingProximity, setCheckingProximity] = useState(false);
+
   const watchIdRef = useRef(null);
   const graceTimerRef = useRef(null);
+
+  // Load saved local private key / credential pass if available
+  useEffect(() => {
+    if (!studentId) return;
+    const stored = localStorage.getItem(`tapin_credential_${studentId.trim()}`);
+    if (stored) {
+      try {
+        setCredentialPass(JSON.parse(stored));
+      } catch (e) {}
+    } else {
+      setCredentialPass(null);
+    }
+  }, [studentId]);
 
   // Fetch active events (filtered strictly for active status & student college eligibility)
   useEffect(() => {
@@ -148,6 +188,9 @@ export default function StudentHome({ onOpenPwaNotice }) {
         setStudentInfo(res.data);
         setStudentError(null);
         fetchActiveEvents(res.data?.college);
+        if (activeEvent) {
+          fetchStudentCheckpointStatus(activeEvent.id, res.data.student_id);
+        }
       } catch (err) {
         setStudentInfo(null);
         setStudentError('Student ID not found in university database');
@@ -156,6 +199,46 @@ export default function StudentHome({ onOpenPwaNotice }) {
 
     return () => clearTimeout(timer);
   }, [studentId]);
+
+  // Fetch Student Checkpoint Visits & Task History
+  const fetchStudentCheckpointStatus = async (eventId, sId) => {
+    if (!eventId || !sId) return;
+    try {
+      const res = await axios.get(`/api/checkpoints/student-status/${eventId}/${encodeURIComponent(sId)}`);
+      setStudentVisits(res.data.visits || []);
+    } catch (err) {}
+  };
+
+  // Evaluate Checkpoint Proximity when student coordinates update
+  useEffect(() => {
+    if (!coords || !activeEvent || !studentInfo) return;
+
+    const checkProximity = async () => {
+      setCheckingProximity(true);
+      try {
+        const res = await axios.post('/api/checkpoints/proximity', {
+          student_id: studentInfo.student_id,
+          event_id: activeEvent.id,
+          lat: coords.lat,
+          lng: coords.lng,
+          accuracy: accuracy || 5,
+          signature: credentialPass?.signature
+        });
+
+        setCheckpointProximity(res.data.proximity);
+        if (res.data.taskAssignment) {
+          setActiveTaskAssignment(res.data.taskAssignment);
+        }
+        fetchStudentCheckpointStatus(activeEvent.id, studentInfo.student_id);
+      } catch (err) {
+        console.error('Error evaluating checkpoint proximity:', err);
+      } finally {
+        setCheckingProximity(false);
+      }
+    };
+
+    checkProximity();
+  }, [coords?.lat, coords?.lng, activeEvent?.id, studentInfo?.student_id]);
 
   // Pure Ray-Casting Point-in-Polygon check for live client-side telemetry
   const isPointInPolygon = (point, polygon) => {
@@ -319,8 +402,43 @@ export default function StudentHome({ onOpenPwaNotice }) {
     }
   };
 
+  // 1-Click Issue & Enroll Ed25519 Student Keypair
+  const handleEnrollKeypair = async () => {
+    if (!studentId || !studentInfo) {
+      alert('Please enter a valid Student ID first.');
+      return;
+    }
+
+    setIsEnrollingKey(true);
+    try {
+      const res = await axios.post(`/api/students/generate-keypair/${encodeURIComponent(studentId.trim())}`);
+      const passData = res.data.credentialPass;
+      setCredentialPass(passData);
+      localStorage.setItem(`tapin_credential_${studentId.trim()}`, JSON.stringify(passData));
+      
+      setStudentInfo(prev => ({ ...prev, hasKeyEnrolled: true }));
+      setKeyEnrollSuccess('Ed25519 Signed Credential Pass enrolled successfully! You can now present this pass or check in with 1 tap.');
+      setTimeout(() => setKeyEnrollSuccess(null), 5000);
+    } catch (err) {
+      alert('Failed to enroll keypair: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setIsEnrollingKey(false);
+    }
+  };
+
+  // Download Student Credential Pass
+  const handleDownloadPass = () => {
+    if (!credentialPass) return;
+    const blob = new Blob([JSON.stringify(credentialPass, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tapin_pass_${studentId.trim()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   // Submit Time In / Time Out Attendance
-  // Anti-Spoof Simulation State for Live Testing & Demonstrations
   const [simulatedSpoofScenario, setSimulatedSpoofScenario] = useState('none');
 
   const handleSubmitAttendance = async () => {
@@ -361,7 +479,8 @@ export default function StudentHome({ onOpenPwaNotice }) {
         lng: submitLng,
         accuracy: submitAcc,
         timestamp: new Date().toISOString(),
-        motionData: submitMotion
+        motionData: submitMotion,
+        signature: credentialPass?.signature
       });
 
       setSubmissionResult(res.data);
@@ -376,6 +495,58 @@ export default function StudentHome({ onOpenPwaNotice }) {
     }
   };
 
+  // Submit Checkpoint Task (Photo or Text)
+  const handleTaskPhotoChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setTaskPhotoFile(file);
+      const reader = new FileReader();
+      reader.onload = () => setTaskPhotoPreview(reader.result);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSubmitTask = async () => {
+    if (!activeTaskAssignment?.assignment?.id) return;
+    const assignmentId = activeTaskAssignment.assignment.id;
+    const taskType = activeTaskAssignment.task.task_type;
+
+    if (taskType === 'photo' && !taskPhotoFile) {
+      alert('Please take or choose a verification photo first.');
+      return;
+    }
+
+    setSubmittingTask(true);
+    setTaskSubmissionResult(null);
+
+    const formData = new FormData();
+    formData.append('student_id', studentId.trim());
+    if (taskType === 'photo') {
+      formData.append('photo', taskPhotoFile);
+    } else {
+      formData.append('answer_text', taskAnswerText);
+    }
+    if (credentialPass?.signature) {
+      formData.append('signature', credentialPass.signature);
+    }
+
+    try {
+      const res = await axios.post(`/api/checkpoints/tasks/${assignmentId}/submit`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      setTaskSubmissionResult(res.data);
+      if (activeEvent) fetchStudentCheckpointStatus(activeEvent.id, studentId.trim());
+    } catch (err) {
+      if (err.response?.data) {
+        setTaskSubmissionResult(err.response.data);
+      } else {
+        alert('Failed to submit task: ' + err.message);
+      }
+    } finally {
+      setSubmittingTask(false);
+    }
+  };
+
   const formatCountdown = (secs) => {
     if (secs === null || secs === undefined) return '00:00';
     const m = Math.floor(secs / 60);
@@ -387,12 +558,10 @@ export default function StudentHome({ onOpenPwaNotice }) {
   const handleStudentIdChange = (e) => {
     let input = e.target.value.toUpperCase().replace(/[^0-9-]/g, '');
     
-    // Auto-insert hyphen after 2 digits if user types raw digits (e.g., 23140015 -> 23-140015)
     if (/^\d{3,}/.test(input) && !input.includes('-')) {
       input = `${input.slice(0, 2)}-${input.slice(2, 8)}`;
     }
 
-    // Limit length to 9 chars (2 digits + 1 hyphen + 6 digits)
     if (input.length > 9) {
       input = input.slice(0, 9);
     }
@@ -403,7 +572,7 @@ export default function StudentHome({ onOpenPwaNotice }) {
   const isIdFormatValid = /^\d{2}-\d{6}$/.test(studentId.trim());
 
   return (
-    <div className="w-full max-w-2xl mx-auto px-1 sm:px-4 py-4 sm:py-8 space-y-4 sm:space-y-6">
+    <div className="w-full max-w-3xl mx-auto px-1 sm:px-4 py-4 sm:py-8 space-y-4 sm:space-y-6">
       
       {/* Active Event Banner */}
       {eventLoading ? (
@@ -457,25 +626,25 @@ export default function StudentHome({ onOpenPwaNotice }) {
             </button>
           </div>
 
-          {/* Event Geofence Parameters */}
+          {/* Event Geofence & Checkpoint Parameters */}
           <div className="mt-4 pt-4 border-t border-slate-800/80 grid grid-cols-3 gap-2 sm:gap-3 text-center">
             <div className="p-2 sm:p-2.5 rounded-xl bg-slate-900/60 border border-slate-800">
               <span className="text-[9px] sm:text-[10px] uppercase text-slate-400 block font-medium">Geofence Boundary</span>
               <span className="text-xs sm:text-sm font-bold text-indigo-400">
                 {normalizePolygon(activeEvent.polygon_coordinates).length >= 3
-                  ? `Polygon (${normalizePolygon(activeEvent.polygon_coordinates).length} Vertices)`
+                  ? `Polygon (${normalizePolygon(activeEvent.polygon_coordinates).length} Nodes)`
                   : 'Custom Polygon'}
+              </span>
+            </div>
+            <div className="p-2 sm:p-2.5 rounded-xl bg-slate-900/60 border border-slate-800">
+              <span className="text-[9px] sm:text-[10px] uppercase text-slate-400 block font-medium">Checkpoints</span>
+              <span className="text-xs sm:text-sm font-bold text-cyan-400">
+                {(activeEvent.checkpoints || []).length} Active Stations
               </span>
             </div>
             <div className="p-2 sm:p-2.5 rounded-xl bg-slate-900/60 border border-slate-800">
               <span className="text-[9px] sm:text-[10px] uppercase text-slate-400 block font-medium">Grace Window</span>
               <span className="text-xs sm:text-sm font-bold text-amber-400">{activeEvent.grace_minutes}m</span>
-            </div>
-            <div className="p-2 sm:p-2.5 rounded-xl bg-slate-900/60 border border-slate-800">
-              <span className="text-[9px] sm:text-[10px] uppercase text-slate-400 block font-medium">Target</span>
-              <span className="text-xs sm:text-sm font-bold text-purple-400 truncate block">
-                {activeEvent.college_filter === 'all' ? 'All' : activeEvent.college_filter}
-              </span>
             </div>
           </div>
         </div>
@@ -489,7 +658,7 @@ export default function StudentHome({ onOpenPwaNotice }) {
         </div>
       )}
 
-      {/* Step 1: Location Access Request Card */}
+      {/* Step 1: Location Access & Radar Card */}
       <div className="glass-card rounded-2xl p-4 sm:p-6 space-y-4 border border-slate-800">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2.5 sm:gap-3">
@@ -498,7 +667,7 @@ export default function StudentHome({ onOpenPwaNotice }) {
             </div>
             <div>
               <h2 className="text-sm sm:text-base font-bold text-white">1. Live Location Telemetry</h2>
-              <p className="text-[11px] sm:text-xs text-slate-400">Verifying GPS coordinates against geofence boundaries.</p>
+              <p className="text-[11px] sm:text-xs text-slate-400">Verifying GPS coordinates against geofence & checkpoint zones.</p>
             </div>
           </div>
 
@@ -513,7 +682,7 @@ export default function StudentHome({ onOpenPwaNotice }) {
         {!coords ? (
           <div className="p-3.5 sm:p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-3">
             <p className="text-xs text-slate-300 leading-relaxed">
-              To verify attendance seamlessly without selfie biometrics, TapIn uses your device's native browser Geolocation API.
+              TapIn uses browser Geolocation and signed cryptographic passes instead of fragile device biometrics.
             </p>
             <button
               onClick={requestLocation}
@@ -540,7 +709,7 @@ export default function StudentHome({ onOpenPwaNotice }) {
             </div>
 
             <div className="p-2.5 sm:p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-0.5 col-span-2 sm:col-span-1">
-              <span className="text-[10px] text-slate-400 block">Geofence Status</span>
+              <span className="text-[10px] text-slate-400 block">Venue Boundary</span>
               <div className="text-xs sm:text-sm font-semibold">
                 {inRange ? (
                   <span className="text-emerald-400 flex items-center gap-1">
@@ -556,7 +725,7 @@ export default function StudentHome({ onOpenPwaNotice }) {
           </div>
         )}
 
-        {/* Live Visual Map Preview with Polygon Geofence Overlay */}
+        {/* Live Visual Map Preview with Polygon Geofence and Checkpoint Overlays */}
         {activeEvent && (
           <div className="pt-2">
             <LiveGeofenceMap
@@ -564,7 +733,8 @@ export default function StudentHome({ onOpenPwaNotice }) {
               studentCoords={coords}
               studentAccuracy={accuracy}
               inRange={inRange}
-              height="220px"
+              activeCheckpoint={checkpointProximity?.matchedCheckpoint}
+              height="240px"
             />
           </div>
         )}
@@ -576,7 +746,7 @@ export default function StudentHome({ onOpenPwaNotice }) {
               <Clock className="w-6 h-6 text-amber-400 shrink-0" />
               <div>
                 <h4 className="text-xs font-bold uppercase tracking-wider">Out of Bounds - Grace Period Active</h4>
-                <p className="text-[11px] text-amber-200/80">Re-enter the venue polygon boundary before countdown expires to avoid attendance penalty.</p>
+                <p className="text-[11px] text-amber-200/80">Re-enter the venue polygon boundary before countdown expires.</p>
               </div>
             </div>
             <div className="text-xl font-mono font-bold text-amber-400 bg-slate-950/60 px-3 py-1.5 rounded-lg border border-amber-500/30">
@@ -584,27 +754,32 @@ export default function StudentHome({ onOpenPwaNotice }) {
             </div>
           </div>
         )}
-
-        {graceExpired && (
-          <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 flex items-center gap-3">
-            <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
-            <div className="text-xs">
-              <span className="font-bold">Grace Period Countdown Expired!</span> You were outside the venue polygon for over {activeEvent?.grace_minutes} mins. You may still time out, but a grace violation will be recorded.
-            </div>
-          </div>
-        )}
       </div>
 
-      {/* Step 2: Student ID & Time In/Out Action */}
-      <div className="glass-card rounded-2xl p-4 sm:p-6 space-y-4 sm:space-y-5 border border-slate-800">
-        <div className="flex items-center gap-3">
-          <div className="p-3 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20">
-            <UserCheck className="w-6 h-6" />
+      {/* Step 2: Credential-Based Authentication (Replacing Device Biometrics) */}
+      <div className="glass-card rounded-2xl p-4 sm:p-6 space-y-4 border border-slate-800">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-3">
+            <div className="p-3 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+              <Key className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-white">2. Signed Credential Authentication</h2>
+              <p className="text-xs text-slate-400">Cryptographic Ed25519 Key Pair (No biometric sensor lock-in).</p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-base font-bold text-white">2. Student Verification & Action</h2>
-            <p className="text-xs text-slate-400">Enter your official Student ID number to log attendance.</p>
-          </div>
+
+          {studentInfo?.hasKeyEnrolled ? (
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <ShieldCheck className="w-3.5 h-3.5" />
+              Enrolled
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              <AlertTriangle className="w-3.5 h-3.5" />
+              Pass Pending
+            </span>
+          )}
         </div>
 
         <div className="space-y-2">
@@ -623,23 +798,9 @@ export default function StudentHome({ onOpenPwaNotice }) {
             }`}
           />
 
-          {studentId && !isIdFormatValid && (
-            <p className="text-[11px] text-amber-400 flex items-center gap-1">
-              <AlertTriangle className="w-3.5 h-3.5" />
-              Student ID must follow format xx-xxxxxx (e.g. 23-140015)
-            </p>
-          )}
-
-          {studentError && isIdFormatValid && (
-            <p className="text-xs text-rose-400 flex items-center gap-1">
-              <AlertTriangle className="w-3.5 h-3.5" />
-              {studentError}
-            </p>
-          )}
-
           {/* Student Info Preview */}
           {studentInfo && (
-            <div className="p-3.5 rounded-xl bg-indigo-950/40 border border-indigo-500/20 space-y-1 text-xs text-slate-300 animate-in fade-in">
+            <div className="p-3.5 rounded-xl bg-indigo-950/40 border border-indigo-500/20 space-y-2 text-xs text-slate-300">
               <div className="font-bold text-white text-sm flex items-center justify-between">
                 <span>{studentInfo.name}</span>
                 <span className="text-[10px] font-normal px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300">
@@ -647,11 +808,234 @@ export default function StudentHome({ onOpenPwaNotice }) {
                 </span>
               </div>
               <p className="text-slate-400">{studentInfo.course} • {studentInfo.college}</p>
+
+              {/* Cryptographic Key Status and Actions */}
+              <div className="pt-2 border-t border-indigo-900/40 flex flex-wrap items-center justify-between gap-2">
+                {studentInfo.hasKeyEnrolled ? (
+                  <div className="flex items-center gap-2 text-emerald-400 text-xs">
+                    <CheckCircle className="w-4 h-4 shrink-0" />
+                    <span>Public Key registered on server</span>
+                  </div>
+                ) : (
+                  <div className="text-amber-300 text-xs">
+                    No key enrolled yet for this student.
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2">
+                  {!studentInfo.hasKeyEnrolled ? (
+                    <button
+                      onClick={handleEnrollKeypair}
+                      disabled={isEnrollingKey}
+                      className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <Zap className="w-3.5 h-3.5" />
+                      <span>{isEnrollingKey ? 'Generating...' : 'Issue & Enroll Pass'}</span>
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => setShowQrModal(true)}
+                        className="px-3 py-1.5 rounded-lg bg-indigo-900/60 hover:bg-indigo-800 text-indigo-300 border border-indigo-700/50 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <QrCode className="w-3.5 h-3.5" />
+                        <span>Present QR Pass</span>
+                      </button>
+                      <button
+                        onClick={handleDownloadPass}
+                        className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 transition-colors cursor-pointer"
+                        title="Download Pass JSON"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {keyEnrollSuccess && (
+                <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs flex items-center gap-1.5">
+                  <CheckCircle className="w-4 h-4 shrink-0" />
+                  <span>{keyEnrollSuccess}</span>
+                </div>
+              )}
             </div>
           )}
         </div>
+      </div>
 
-        {/* Anti-Spoof Test Scenario Switcher for Research Demonstrations */}
+      {/* Step 3: Checkpoint Mission & Task Verification HUD */}
+      {activeEvent && (activeEvent.checkpoints || []).length > 0 && (
+        <div className="glass-card rounded-2xl p-4 sm:p-6 space-y-4 border border-cyan-500/30">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-3">
+              <div className="p-3 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                <CheckSquare className="w-6 h-6" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-white">3. Multi-Checkpoint Task Verification</h2>
+                <p className="text-xs text-slate-400">Complete tasks at nested checkpoint zones to verify physical attendance.</p>
+              </div>
+            </div>
+
+            <span className="px-3 py-1 rounded-full text-xs font-bold bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
+              {studentVisits.length}/{(activeEvent.checkpoints || []).length} Stations Completed
+            </span>
+          </div>
+
+          {/* Checkpoint Station Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            {(activeEvent.checkpoints || []).map((cp, idx) => {
+              const isVisited = studentVisits.some(v => v.checkpoint_id === cp.id);
+              const isMatched = checkpointProximity?.matchedCheckpoint?.id === cp.id;
+
+              return (
+                <div
+                  key={cp.id}
+                  className={`p-3.5 rounded-xl border transition-all ${
+                    isVisited
+                      ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-300'
+                      : isMatched
+                      ? 'bg-cyan-950/40 border-cyan-400 shadow-lg shadow-cyan-500/20 text-cyan-200'
+                      : 'bg-slate-900/60 border-slate-800 text-slate-400'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] font-bold uppercase tracking-wider">
+                      Station #{cp.checkpoint_order || (idx + 1)}
+                    </span>
+                    {isVisited ? (
+                      <CheckCircle className="w-4 h-4 text-emerald-400" />
+                    ) : isMatched ? (
+                      <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
+                    ) : null}
+                  </div>
+                  <h4 className="font-bold text-xs text-white truncate">{cp.name}</h4>
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    {isVisited ? 'Verified & Completed ✅' : isMatched ? 'Inside Zone (Task Active!)' : `Radius: ${cp.radius_m || 20}m`}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Active Assigned Task Box when in a Checkpoint Zone */}
+          {activeTaskAssignment && activeTaskAssignment.task && (
+            <div className="p-4 rounded-xl bg-slate-900/90 border border-cyan-500/40 space-y-3 animate-in fade-in">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-500/20 text-cyan-300 uppercase">
+                    Assigned Checkpoint Mission
+                  </span>
+                  <h3 className="text-sm font-bold text-white mt-1">{activeTaskAssignment.task.title}</h3>
+                  <p className="text-xs text-slate-300 mt-0.5">{activeTaskAssignment.task.description}</p>
+                </div>
+                <div className="text-[10px] font-mono text-slate-400 bg-slate-950 px-2 py-1 rounded border border-slate-800 shrink-0">
+                  {activeTaskAssignment.algorithmDetails?.mode || 'COLLISION-FREE'}
+                </div>
+              </div>
+
+              {activeTaskAssignment.task.instructions && (
+                <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800 text-xs text-slate-300">
+                  <span className="font-semibold text-slate-200">Instructions: </span>
+                  {activeTaskAssignment.task.instructions}
+                </div>
+              )}
+
+              {/* Task Upload / Input Form */}
+              {activeTaskAssignment.task.task_type === 'photo' ? (
+                <div className="space-y-2 pt-1">
+                  <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                    <Camera className="w-4 h-4 text-cyan-400" />
+                    <span>Upload or Capture Verification Photo (EXIF + Duplicate Hash Analyzed)</span>
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={handleTaskPhotoChange}
+                    className="block w-full text-xs text-slate-400 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-cyan-600 file:text-white hover:file:bg-cyan-500 cursor-pointer"
+                  />
+
+                  {taskPhotoPreview && (
+                    <div className="relative mt-2 rounded-xl overflow-hidden border border-cyan-500/30 max-h-48 w-full bg-slate-950 flex items-center justify-center">
+                      <img src={taskPhotoPreview} alt="Verification Preview" className="h-48 object-contain" />
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-1 pt-1">
+                  <label className="text-xs font-medium text-slate-300">Your Response</label>
+                  <input
+                    type="text"
+                    value={taskAnswerText}
+                    onChange={(e) => setTaskAnswerText(e.target.value)}
+                    placeholder="Enter requested answer / room number"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-cyan-500"
+                  />
+                </div>
+              )}
+
+              <button
+                onClick={handleSubmitTask}
+                disabled={submittingTask || (activeTaskAssignment.task.task_type === 'photo' && !taskPhotoFile)}
+                className="w-full py-3 px-4 rounded-xl font-bold text-xs bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white shadow-lg shadow-cyan-600/20 flex items-center justify-center gap-2 transition-all disabled:opacity-50 cursor-pointer"
+              >
+                {submittingTask ? (
+                  <span className="flex items-center gap-2">
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Analyzing EXIF Geolocation & Perceptual Hash...
+                  </span>
+                ) : (
+                  <>
+                    <UploadCloud className="w-4 h-4" />
+                    <span>Submit & Verify Checkpoint Task</span>
+                  </>
+                )}
+              </button>
+
+              {/* Task Outcome Result */}
+              {taskSubmissionResult && (
+                <div className={`p-3.5 rounded-xl border text-xs space-y-1.5 animate-in fade-in ${
+                  taskSubmissionResult.success
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                    : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                }`}>
+                  <div className="font-bold flex items-center gap-1.5">
+                    {taskSubmissionResult.success ? (
+                      <CheckCircle className="w-4 h-4 text-emerald-400" />
+                    ) : (
+                      <ShieldAlert className="w-4 h-4 text-rose-400" />
+                    )}
+                    <span>{taskSubmissionResult.message}</span>
+                  </div>
+
+                  {taskSubmissionResult.photoAnalysis && (
+                    <div className="pt-1.5 border-t border-slate-800 text-[11px] grid grid-cols-2 gap-1.5 text-slate-300">
+                      <div>EXIF GPS: <strong>{taskSubmissionResult.photoAnalysis.metadata.gpsExtracted ? 'Present' : 'Not found'}</strong></div>
+                      <div>Hash Match: <strong className={taskSubmissionResult.photoAnalysis.duplicateDetection.isDuplicate ? 'text-rose-400 font-bold' : 'text-emerald-400'}>{taskSubmissionResult.photoAnalysis.duplicateDetection.similarityPercentage} Duplicate</strong></div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Anti-Spoof Tester & Attendance Submission */}
+      <div className="glass-card rounded-2xl p-4 sm:p-6 space-y-4 border border-slate-800">
+        <div className="flex items-center gap-3">
+          <div className="p-3 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20">
+            <UserCheck className="w-6 h-6" />
+          </div>
+          <div>
+            <h2 className="text-base font-bold text-white">4. Final Attendance Check-in</h2>
+            <p className="text-xs text-slate-400">Cryptographically signs your time-in / time-out record.</p>
+          </div>
+        </div>
+
+        {/* Anti-Spoof Test Scenario Switcher */}
         <div className="p-3.5 rounded-xl bg-purple-950/30 border border-purple-500/20 space-y-2 text-xs">
           <div className="flex items-center justify-between">
             <span className="font-bold text-purple-300 flex items-center gap-1.5">
@@ -660,9 +1044,6 @@ export default function StudentHome({ onOpenPwaNotice }) {
             </span>
             <span className="text-[10px] text-purple-400 font-mono">Research Mode</span>
           </div>
-          <p className="text-[11px] text-slate-400">
-            Simulate 3rd-party fake GPS apps or location anomalies to verify TapIn's anti-spoofing classification:
-          </p>
           <select
             value={simulatedSpoofScenario}
             onChange={(e) => setSimulatedSpoofScenario(e.target.value)}
@@ -680,17 +1061,17 @@ export default function StudentHome({ onOpenPwaNotice }) {
           <button
             onClick={handleSubmitAttendance}
             disabled={submitting || !coords || !studentInfo || !activeEvent}
-            className="w-full py-4 px-6 rounded-2xl font-bold text-sm bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white shadow-xl shadow-indigo-600/25 flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full py-4 px-6 rounded-2xl font-bold text-sm bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white shadow-xl shadow-indigo-600/25 flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
           >
             {submitting ? (
               <span className="flex items-center gap-2">
                 <RefreshCw className="w-4 h-4 animate-spin" />
-                Analyzing GPS Telemetry & Logging...
+                Signing Attendance Payload & Verifying Telemetry...
               </span>
             ) : (
               <>
                 <Zap className="w-5 h-5 fill-white text-white" />
-                <span>Submit Time In / Time Out</span>
+                <span>Submit Signed Time In / Time Out</span>
               </>
             )}
           </button>
@@ -714,30 +1095,66 @@ export default function StudentHome({ onOpenPwaNotice }) {
               <span>{submissionResult.message}</span>
             </div>
 
+            {submissionResult.credentialAuth && (
+              <div className="pt-1.5 border-t border-slate-800 text-[11px] text-slate-300">
+                Signature Verification: <strong className={submissionResult.credentialAuth.signatureValid ? 'text-emerald-400' : 'text-amber-400'}>{submissionResult.credentialAuth.signatureValid ? 'Valid Ed25519 Signature' : 'No Signature Presented'}</strong>
+              </div>
+            )}
+
             {submissionResult.spoofDetection && (
-              <div className="pt-2 border-t border-slate-800 text-[11px] grid grid-cols-2 gap-2 text-slate-300">
+              <div className="pt-1 border-t border-slate-800 text-[11px] grid grid-cols-2 gap-2 text-slate-300">
                 <div>Trust Score: <strong className="text-white">{submissionResult.spoofDetection.trustScore}/100</strong></div>
                 <div>Spoof Flagged: <strong className={submissionResult.spoofDetection.isSpoofed ? 'text-rose-400' : 'text-emerald-400'}>{submissionResult.spoofDetection.isSpoofed ? 'YES' : 'NO'}</strong></div>
               </div>
             )}
           </div>
         )}
-
       </div>
 
-      {/* PWA & Web Push Helpers */}
-      <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 flex items-center justify-between text-xs text-slate-400">
-        <div className="flex items-center gap-2">
-          <Bell className="w-4 h-4 text-indigo-400" />
-          <span>Enable Web Push warnings for grace countdowns</span>
+      {/* QR Pass Presentation Modal */}
+      {showQrModal && credentialPass && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="glass-card max-w-sm w-full rounded-2xl p-6 border border-indigo-500/40 space-y-4 text-center relative animate-in fade-in zoom-in-95">
+            <button
+              onClick={() => setShowQrModal(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 rounded-lg bg-slate-900 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="p-3 bg-indigo-500/10 rounded-2xl w-14 h-14 mx-auto flex items-center justify-center text-indigo-400 border border-indigo-500/20">
+              <QrCode className="w-8 h-8" />
+            </div>
+
+            <div>
+              <h3 className="text-base font-bold text-white">TapIn Cryptographic Pass</h3>
+              <p className="text-xs text-slate-400">{studentInfo?.name} • {studentId}</p>
+            </div>
+
+            {/* Visual Pass Representation */}
+            <div className="p-4 bg-white rounded-xl shadow-inner mx-auto w-48 h-48 flex flex-col items-center justify-center">
+              <div className="w-40 h-40 border-4 border-slate-900 p-2 flex flex-col items-center justify-center text-slate-900 text-center">
+                <Key className="w-10 h-10 text-indigo-600 mb-1" />
+                <span className="text-[10px] font-mono font-bold break-all">ED25519-SIGNED</span>
+                <span className="text-[9px] font-mono text-slate-600 mt-1">{studentId}</span>
+                <span className="text-[8px] font-mono text-slate-400">{credentialPass.payload?.issued_at?.slice(0, 10)}</span>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-slate-400">
+              This signed credential pass can be scanned at checkpoints or presented on any terminal.
+            </p>
+
+            <button
+              onClick={handleDownloadPass}
+              className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <Download className="w-4 h-4" />
+              <span>Download Pass JSON File</span>
+            </button>
+          </div>
         </div>
-        <button
-          onClick={requestNotificationPermission}
-          className="px-3 py-1.5 rounded-lg bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/30 border border-indigo-500/30 transition-colors font-medium text-[11px]"
-        >
-          Enable Alerts
-        </button>
-      </div>
+      )}
 
     </div>
   );

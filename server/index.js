@@ -14,6 +14,7 @@ const eventRoutes = require('./routes/events');
 const attendanceRoutes = require('./routes/attendance');
 const penaltyRoutes = require('./routes/penalties');
 const spoofRoutes = require('./routes/spoof');
+const checkpointRoutes = require('./routes/checkpoints');
 
 const app = express();
 const server = http.createServer(app);
@@ -28,6 +29,9 @@ const io = new Server(server, {
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Serve uploaded task photos
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Attach Socket.io instance to Express app for route access
 app.set('io', io);
@@ -53,6 +57,7 @@ app.use('/api/events', eventRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/penalties', penaltyRoutes);
 app.use('/api/spoof', spoofRoutes);
+app.use('/api/checkpoints', checkpointRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -64,7 +69,7 @@ const clientDist = path.join(__dirname, '../client/dist');
 app.use(express.static(clientDist));
 
 app.use((req, res, next) => {
-  if (req.path.startsWith('/api')) return next();
+  if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) return next();
   const indexPath = path.join(clientDist, 'index.html');
   if (require('fs').existsSync(indexPath)) {
     res.sendFile(indexPath);

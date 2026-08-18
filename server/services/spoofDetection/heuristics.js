@@ -169,9 +169,86 @@ function checkMotionMismatch(currentTrace, previousTrace) {
   return { flagged: false, penalty: 0, flag: null };
 }
 
+/**
+ * Stationary Anomaly Signal Check (Configurable Window and Threshold).
+ * 
+ * Genuine mobile GPS receivers experience atmospheric multipath drift and physical micro-movements
+ * (typically 1-5m fluctuation over several minutes). A software mock/emulator or stationary mock
+ * script that injects static identical coordinates over 5+ minutes during an active event triggers
+ * this stationary anomaly flag.
+ * 
+ * @param {Object} currentTrace { lat, lng, timestamp }
+ * @param {Array} history Array of previous traces
+ * @param {Object} config { windowSeconds: 300, thresholdMeters: 1.0 }
+ */
+function checkStationaryAnomaly(currentTrace, history = [], config = {}) {
+  const windowSeconds = config.windowSeconds !== undefined ? parseFloat(config.windowSeconds) : 300; // 5 min default
+  const thresholdMeters = config.thresholdMeters !== undefined ? parseFloat(config.thresholdMeters) : 1.0; // 1 meter default
+
+  if (!history || history.length < 2 || !currentTrace || !currentTrace.timestamp) {
+    return { flagged: false, penalty: 0, flag: null, maxDisplacement: 0, timeSpanSeconds: 0 };
+  }
+
+  const currTime = new Date(currentTrace.timestamp).getTime();
+  const windowMs = windowSeconds * 1000;
+
+  // Filter traces falling within the configurable time window
+  const windowTraces = history.filter(trace => {
+    if (!trace.timestamp || trace.lat === undefined || trace.lng === undefined) return false;
+    const t = new Date(trace.timestamp).getTime();
+    return (currTime - t) >= 0 && (currTime - t) <= windowMs;
+  });
+
+  // Need at least 2 historical traces inside the window + current trace
+  if (windowTraces.length < 2) {
+    return { flagged: false, penalty: 0, flag: null, maxDisplacement: 0, timeSpanSeconds: 0 };
+  }
+
+  const oldestTrace = windowTraces[0];
+  const oldestTime = new Date(oldestTrace.timestamp).getTime();
+  const timeSpanSeconds = (currTime - oldestTime) / 1000;
+
+  // Require history to span at least 60% of the target window (or at least 120 seconds)
+  const minRequiredSpan = Math.min(windowSeconds * 0.6, 120);
+  if (timeSpanSeconds < minRequiredSpan) {
+    return { flagged: false, penalty: 0, flag: null, maxDisplacement: 0, timeSpanSeconds };
+  }
+
+  // Calculate maximum displacement relative to current trace and among window traces
+  let maxDisplacement = 0;
+  for (const trace of windowTraces) {
+    const dist = calculateDistance(trace.lat, trace.lng, currentTrace.lat, currentTrace.lng);
+    if (dist > maxDisplacement) {
+      maxDisplacement = dist;
+    }
+  }
+
+  // If maximum movement across the entire multi-minute window is under threshold
+  if (maxDisplacement <= thresholdMeters) {
+    const minutesSpanned = Math.round((timeSpanSeconds / 60) * 10) / 10;
+    return {
+      flagged: true,
+      penalty: 35,
+      flag: 'STATIONARY_SIGNAL_ANOMALY',
+      maxDisplacement: Math.round(maxDisplacement * 100) / 100,
+      timeSpanSeconds: Math.round(timeSpanSeconds),
+      reason: `Stationary signal anomaly: Consecutive GPS reports showed near-zero movement (${Math.round(maxDisplacement * 100) / 100}m <= ${thresholdMeters}m threshold) across ${minutesSpanned} minutes during active event`
+    };
+  }
+
+  return {
+    flagged: false,
+    penalty: 0,
+    flag: null,
+    maxDisplacement: Math.round(maxDisplacement * 100) / 100,
+    timeSpanSeconds: Math.round(timeSpanSeconds)
+  };
+}
+
 module.exports = {
   checkSpeed,
   checkAccuracy,
   checkTimestamp,
-  checkMotionMismatch
+  checkMotionMismatch,
+  checkStationaryAnomaly
 };

@@ -17,6 +17,8 @@ function initDb() {
       course TEXT NOT NULL,
       college TEXT NOT NULL,
       section TEXT DEFAULT 'A',
+      public_key TEXT,
+      key_enrolled_at DATETIME,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -41,6 +43,10 @@ function initDb() {
       course_filter TEXT DEFAULT 'all',
       year_filter TEXT DEFAULT 'all',
       status TEXT CHECK(status IN ('active', 'upcoming', 'closed')) DEFAULT 'active',
+      allow_duplicate_tasks INTEGER DEFAULT 0,
+      randomize_tasks INTEGER DEFAULT 0,
+      task_collision_window_minutes INTEGER DEFAULT 10,
+      max_checkpoints INTEGER DEFAULT 3,
       created_by INTEGER,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (created_by) REFERENCES admins(id) ON DELETE SET NULL
@@ -53,6 +59,78 @@ function initDb() {
       start_time DATETIME NOT NULL,
       end_time DATETIME NOT NULL,
       FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS event_checkpoints (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL,
+      checkpoint_order INTEGER NOT NULL DEFAULT 1,
+      name TEXT NOT NULL,
+      description TEXT,
+      lat REAL NOT NULL,
+      lng REAL NOT NULL,
+      radius_m REAL NOT NULL DEFAULT 20.0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS checkpoint_tasks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      checkpoint_id INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL,
+      task_type TEXT CHECK(task_type IN ('photo', 'code', 'quiz', 'text')) DEFAULT 'photo',
+      instructions TEXT,
+      verification_rule TEXT DEFAULT 'EXIF_METADATA_AND_PHASH',
+      is_active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (checkpoint_id) REFERENCES event_checkpoints(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS student_checkpoint_visits (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL,
+      checkpoint_id INTEGER NOT NULL,
+      student_id TEXT NOT NULL,
+      visited_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      lat REAL NOT NULL,
+      lng REAL NOT NULL,
+      accuracy REAL,
+      distance_to_checkpoint REAL,
+      credential_signature_valid INTEGER DEFAULT 1,
+      FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
+      FOREIGN KEY (checkpoint_id) REFERENCES event_checkpoints(id) ON DELETE CASCADE,
+      FOREIGN KEY (student_id) REFERENCES students(student_id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS student_task_assignments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL,
+      checkpoint_id INTEGER NOT NULL,
+      task_id INTEGER NOT NULL,
+      student_id TEXT NOT NULL,
+      assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      status TEXT CHECK(status IN ('assigned', 'submitted', 'verified', 'rejected')) DEFAULT 'assigned',
+      submission_data TEXT,
+      photo_url TEXT,
+      photo_hash TEXT,
+      exif_metadata TEXT,
+      verification_score REAL DEFAULT 100,
+      flag_duplicate INTEGER DEFAULT 0,
+      duplicate_source_id INTEGER,
+      duplicate_reason TEXT,
+      completed_at DATETIME,
+      FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
+      FOREIGN KEY (checkpoint_id) REFERENCES event_checkpoints(id) ON DELETE CASCADE,
+      FOREIGN KEY (task_id) REFERENCES checkpoint_tasks(id) ON DELETE CASCADE,
+      FOREIGN KEY (student_id) REFERENCES students(student_id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS system_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      description TEXT,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS attendance_logs (
@@ -69,6 +147,8 @@ function initDb() {
       is_spoofed INTEGER DEFAULT 0,
       spoof_flags TEXT,
       status TEXT CHECK(status IN ('valid', 'borderline', 'rejected')) DEFAULT 'valid',
+      signature_valid INTEGER DEFAULT 1,
+      signature_payload TEXT,
       FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
       FOREIGN KEY (student_id) REFERENCES students(student_id) ON DELETE CASCADE
     );
@@ -95,35 +175,30 @@ function initDb() {
     CREATE INDEX IF NOT EXISTS idx_logs_event_timestamp ON attendance_logs (event_id, timestamp DESC);
     CREATE INDEX IF NOT EXISTS idx_events_status ON events (status);
     CREATE INDEX IF NOT EXISTS idx_violations_event ON violations (event_id);
+    CREATE INDEX IF NOT EXISTS idx_checkpoints_event ON event_checkpoints (event_id);
+    CREATE INDEX IF NOT EXISTS idx_tasks_checkpoint ON checkpoint_tasks (checkpoint_id);
+    CREATE INDEX IF NOT EXISTS idx_assignments_student ON student_task_assignments (event_id, checkpoint_id, student_id);
   `);
 
+  // Safe table migrations for existing database schemas
+  try { db.exec(`ALTER TABLE students ADD COLUMN public_key TEXT;`); } catch (e) {}
+  try { db.exec(`ALTER TABLE students ADD COLUMN key_enrolled_at DATETIME;`); } catch (e) {}
+  try { db.exec(`ALTER TABLE events ADD COLUMN allow_duplicate_tasks INTEGER DEFAULT 0;`); } catch (e) {}
+  try { db.exec(`ALTER TABLE events ADD COLUMN randomize_tasks INTEGER DEFAULT 0;`); } catch (e) {}
+  try { db.exec(`ALTER TABLE events ADD COLUMN task_collision_window_minutes INTEGER DEFAULT 10;`); } catch (e) {}
+  try { db.exec(`ALTER TABLE events ADD COLUMN max_checkpoints INTEGER DEFAULT 3;`); } catch (e) {}
+  try { db.exec(`ALTER TABLE attendance_logs ADD COLUMN signature_valid INTEGER DEFAULT 1;`); } catch (e) {}
+  try { db.exec(`ALTER TABLE attendance_logs ADD COLUMN signature_payload TEXT;`); } catch (e) {}
+
+  // Seed default system settings
   try {
-    db.exec(`
-      UPDATE students SET college = 'College of Engineering' WHERE college = 'Engineering';
-      UPDATE students SET college = 'College of Business, Economics and Accountancy' WHERE college LIKE '%Business%';
-      UPDATE students SET college = 'College of Health Sciences' WHERE college = 'Health Sciences';
-      UPDATE students SET college = 'College of Arts and Sciences' WHERE college = 'Arts and Sciences';
-      UPDATE students SET college = 'College of Industrial Technology' WHERE college = 'Industrial Technology';
-      UPDATE students SET college = 'College of Teacher Education' WHERE college = 'Teacher Education';
-
-      UPDATE events SET college_filter = 'College of Engineering' WHERE college_filter = 'Engineering';
-      UPDATE events SET college_filter = 'College of Business, Economics and Accountancy' WHERE college_filter LIKE '%Business%';
-      UPDATE events SET college_filter = 'College of Health Sciences' WHERE college_filter = 'Health Sciences';
-      UPDATE events SET college_filter = 'College of Arts and Sciences' WHERE college_filter = 'Arts and Sciences';
-      UPDATE events SET college_filter = 'College of Industrial Technology' WHERE college_filter = 'Industrial Technology';
-      UPDATE events SET college_filter = 'College of Teacher Education' WHERE college_filter = 'Teacher Education';
-
-      -- Clean up dummy test students (keeping only Micko Gabriel D. Permison)
-      DELETE FROM students WHERE student_id NOT IN ('23-140015');
+    const insertSetting = db.prepare(`
+      INSERT OR IGNORE INTO system_settings (key, value, description)
+      VALUES (?, ?, ?)
     `);
-  } catch (e) {}
-
-  try {
-    db.exec(`ALTER TABLE students ADD COLUMN section TEXT DEFAULT 'A';`);
-  } catch (e) {}
-
-  try {
-    db.exec(`ALTER TABLE events ADD COLUMN polygon_coordinates TEXT;`);
+    insertSetting.run('stationary_window_seconds', '300', 'Time window in seconds to evaluate stationary GPS anomaly');
+    insertSetting.run('stationary_movement_threshold_m', '1.0', 'Maximum displacement in meters below which stationary anomaly triggers');
+    insertSetting.run('duplicate_hamming_threshold', '5', 'Maximum Hamming distance for perceptual hash duplicate photo detection (<=5 out of 64 bits)');
   } catch (e) {}
 
   try {
@@ -139,7 +214,6 @@ function initDb() {
       const rad = (ev.radius_m || 120) / 2;
       const cosLat = Math.cos(cLat * (Math.PI / 180));
       
-      // Default 8-vertex U-shape
       const offsets = [
         [-rad, -rad],
         [+rad, -rad],

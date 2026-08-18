@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import {
   Cpu,
@@ -11,12 +11,22 @@ import {
   Zap,
   CheckCircle,
   AlertTriangle,
-  Info
+  Info,
+  Settings,
+  Save,
+  Clock,
+  Crosshair
 } from 'lucide-react';
 
 export default function SpoofResearchLab() {
   const [strategy, setStrategy] = useState('rule-based');
   
+  // Anomaly config parameters
+  const [stationaryWindowSeconds, setStationaryWindowSeconds] = useState(300);
+  const [stationaryThresholdMeters, setStationaryThresholdMeters] = useState(1.0);
+  const [savingConfig, setSavingConfig] = useState(false);
+  const [configSaveMsg, setConfigSaveMsg] = useState(null);
+
   // Custom trace tester form
   const [testLat, setTestLat] = useState(14.6050);
   const [testLng, setTestLng] = useState(120.9900);
@@ -24,6 +34,7 @@ export default function SpoofResearchLab() {
   const [testAccelX, setTestAccelX] = useState(0.0);
   const [testAccelY, setTestAccelY] = useState(0.0);
   const [testAccelZ, setTestAccelZ] = useState(9.81);
+  const [testScenario, setTestScenario] = useState('stationary');
   const [evalResult, setEvalResult] = useState(null);
   const [testingTrace, setTestingTrace] = useState(false);
 
@@ -31,9 +42,83 @@ export default function SpoofResearchLab() {
   const [harnessRunning, setHarnessRunning] = useState(false);
   const [harnessOutput, setHarnessOutput] = useState(null);
 
+  useEffect(() => {
+    fetchConfig();
+  }, []);
+
+  const fetchConfig = async () => {
+    try {
+      const res = await axios.get('/api/spoof/config');
+      if (res.data) {
+        setStationaryWindowSeconds(res.data.stationary_window_seconds || 300);
+        setStationaryThresholdMeters(res.data.stationary_movement_threshold_m || 1.0);
+      }
+    } catch (err) {}
+  };
+
+  const handleSaveConfig = async () => {
+    setSavingConfig(true);
+    setConfigSaveMsg(null);
+    try {
+      await axios.post('/api/spoof/config', {
+        stationary_window_seconds: parseFloat(stationaryWindowSeconds),
+        stationary_movement_threshold_m: parseFloat(stationaryThresholdMeters),
+        activeStrategy: strategy
+      });
+      setConfigSaveMsg('Anomaly detection parameters updated & applied server-wide!');
+      setTimeout(() => setConfigSaveMsg(null), 4000);
+    } catch (err) {
+      alert('Failed to save config: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setSavingConfig(false);
+    }
+  };
+
+  const handleApplyPreset = (scenario) => {
+    setTestScenario(scenario);
+    if (scenario === 'stationary') {
+      setTestLat(18.196000);
+      setTestLng(120.592700);
+      setTestAccuracy(5.0);
+      setTestAccelX(0);
+      setTestAccelY(0);
+      setTestAccelZ(9.81);
+    } else if (scenario === 'teleport') {
+      setTestLat(18.5000);
+      setTestLng(120.9000);
+      setTestAccuracy(5.0);
+    } else if (scenario === 'static_accuracy') {
+      setTestLat(18.1960);
+      setTestLng(120.5927);
+      setTestAccuracy(0.1);
+    } else if (scenario === 'sensor_mismatch') {
+      setTestLat(18.2000);
+      setTestLng(120.5950);
+      setTestAccelX(0);
+      setTestAccelY(0);
+      setTestAccelZ(9.81);
+    }
+  };
+
   const handleTestTrace = async (e) => {
     e.preventDefault();
     setTestingTrace(true);
+
+    const now = Date.now();
+    let history = [];
+
+    if (testScenario === 'stationary') {
+      // Simulate 6-minute stationary trace history with 0.05m movement
+      history = [
+        { lat: parseFloat(testLat), lng: parseFloat(testLng), accuracy: 5.0, timestamp: new Date(now - 360000).toISOString() },
+        { lat: parseFloat(testLat) + 0.000001, lng: parseFloat(testLng), accuracy: 5.0, timestamp: new Date(now - 240000).toISOString() },
+        { lat: parseFloat(testLat), lng: parseFloat(testLng) + 0.000001, accuracy: 5.0, timestamp: new Date(now - 120000).toISOString() }
+      ];
+    } else {
+      history = [
+        { lat: 18.1960, lng: 120.5927, accuracy: 5.0, timestamp: new Date(now - 5000).toISOString() }
+      ];
+    }
 
     const tracePayload = {
       currentTrace: {
@@ -47,10 +132,12 @@ export default function SpoofResearchLab() {
           accelZ: parseFloat(testAccelZ)
         }
       },
-      history: [
-        { lat: 14.5995, lng: 120.9842, accuracy: 5.0, timestamp: new Date(Date.now() - 5000).toISOString() }
-      ],
-      strategy
+      history,
+      strategy,
+      evalConfig: {
+        stationaryWindowSeconds: parseFloat(stationaryWindowSeconds),
+        stationaryThresholdMeters: parseFloat(stationaryThresholdMeters)
+      }
     };
 
     try {
@@ -85,7 +172,7 @@ export default function SpoofResearchLab() {
             <Cpu className="w-5 h-5 sm:w-6 sm:h-6 text-purple-400" />
             GPS Spoofing Research Module & Evaluation Lab
           </h1>
-          <p className="text-xs text-slate-400">Core thesis contribution: Standalone multi-heuristic location anomaly classifier & metrics harness.</p>
+          <p className="text-xs text-slate-400">Multi-heuristic anomaly classifier & stationary signal verification engine.</p>
         </div>
 
         {/* Strategy Switcher */}
@@ -110,150 +197,260 @@ export default function SpoofResearchLab() {
         </div>
       </div>
 
-      {/* Defense-in-depth Thesis Disclosure Banner */}
-      <div className="p-4 rounded-2xl bg-purple-950/30 border border-purple-500/30 text-xs text-purple-200 space-y-1.5 flex items-start gap-3">
-        <Info className="w-5 h-5 text-purple-400 shrink-0 mt-0.5" />
-        <div className="leading-relaxed">
-          <strong className="text-white block font-bold">Research Methodology & Scope Note:</strong>
-          No GPS spoofing-detection approach on the open browser web achieves 100% prevention due to client-side API boundaries. This module provides a measured defense-in-depth layer combining physics speed limits, accuracy jitter profiling, timestamp cadence, and accelerometer sensor cross-checking. Its reported metrics (Accuracy, Precision, Recall, FPR) constitute the empirical deliverable.
+      {/* Admin Configurable Parameters Panel */}
+      <div className="glass-card rounded-2xl p-4 sm:p-6 border border-purple-500/30 space-y-4">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20">
+              <Settings className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-sm sm:text-base font-bold text-white">Configurable Spoof Detection Heuristics</h2>
+              <p className="text-xs text-slate-400">Tune stationary anomaly time window and displacement threshold dynamically.</p>
+            </div>
+          </div>
+
+          <button
+            onClick={handleSaveConfig}
+            disabled={savingConfig}
+            className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-purple-600/25 cursor-pointer"
+          >
+            <Save className="w-3.5 h-3.5" />
+            <span>{savingConfig ? 'Saving...' : 'Save Parameters'}</span>
+          </button>
+        </div>
+
+        {configSaveMsg && (
+          <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 shrink-0" />
+            <span>{configSaveMsg}</span>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+          <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-slate-200">Stationary Window (Seconds)</span>
+              <span className="font-mono text-purple-400 font-bold">{stationaryWindowSeconds}s ({Math.round(stationaryWindowSeconds / 60)} mins)</span>
+            </div>
+            <input
+              type="range"
+              min={60}
+              max={600}
+              step={30}
+              value={stationaryWindowSeconds}
+              onChange={(e) => setStationaryWindowSeconds(parseFloat(e.target.value))}
+              className="w-full accent-purple-500 cursor-pointer"
+            />
+            <p className="text-[11px] text-slate-400">Duration of consecutive GPS telemetry inspected for absence of natural jitter.</p>
+          </div>
+
+          <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-slate-200">Stationary Movement Threshold (Meters)</span>
+              <span className="font-mono text-purple-400 font-bold">{stationaryThresholdMeters}m</span>
+            </div>
+            <input
+              type="range"
+              min={0.2}
+              max={5.0}
+              step={0.1}
+              value={stationaryThresholdMeters}
+              onChange={(e) => setStationaryThresholdMeters(parseFloat(e.target.value))}
+              className="w-full accent-purple-500 cursor-pointer"
+            />
+            <p className="text-[11px] text-slate-400">Maximum displacement below which location updates are flagged as stationary mock.</p>
+          </div>
         </div>
       </div>
 
-      {/* Grid: Interactive Telemetry Tester vs Evaluation Harness */}
+      {/* Main Grid: Interactive Tester & Harness */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
-        {/* Left Column: Interactive Telemetry Simulator */}
-        <div className="glass-card rounded-2xl p-6 border border-slate-800 space-y-4">
-          <h2 className="text-base font-bold text-white flex items-center gap-2">
-            <Sliders className="w-4 h-4 text-indigo-400" />
-            Simulate Location Telemetry Report
-          </h2>
+        {/* Left: Custom Trace Evaluator */}
+        <div className="glass-card rounded-2xl p-5 border border-slate-800 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-bold text-white flex items-center gap-2">
+              <Zap className="w-5 h-5 text-indigo-400" />
+              Live Custom Trace Evaluator
+            </h2>
+            <span className="text-xs text-slate-400 font-mono">POST /api/spoof/evaluate</span>
+          </div>
 
-          <form onSubmit={handleTestTrace} className="space-y-4 text-xs">
-            <div className="grid grid-cols-2 gap-3">
+          {/* Preset Buttons */}
+          <div className="space-y-1">
+            <span className="text-[11px] text-slate-400 block font-semibold">Test Attack Scenarios:</span>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[11px]">
+              <button
+                type="button"
+                onClick={() => handleApplyPreset('stationary')}
+                className={`p-2 rounded-lg border font-medium text-left transition-all ${
+                  testScenario === 'stationary' ? 'bg-purple-600/30 border-purple-500 text-purple-300' : 'bg-slate-900 border-slate-800 text-slate-400'
+                }`}
+              >
+                🚨 Stationary Mock
+              </button>
+              <button
+                type="button"
+                onClick={() => handleApplyPreset('teleport')}
+                className={`p-2 rounded-lg border font-medium text-left transition-all ${
+                  testScenario === 'teleport' ? 'bg-purple-600/30 border-purple-500 text-purple-300' : 'bg-slate-900 border-slate-800 text-slate-400'
+                }`}
+              >
+                🚨 Teleport 33km
+              </button>
+              <button
+                type="button"
+                onClick={() => handleApplyPreset('static_accuracy')}
+                className={`p-2 rounded-lg border font-medium text-left transition-all ${
+                  testScenario === 'static_accuracy' ? 'bg-purple-600/30 border-purple-500 text-purple-300' : 'bg-slate-900 border-slate-800 text-slate-400'
+                }`}
+              >
+                🚨 0.1m Precision
+              </button>
+              <button
+                type="button"
+                onClick={() => handleApplyPreset('sensor_mismatch')}
+                className={`p-2 rounded-lg border font-medium text-left transition-all ${
+                  testScenario === 'sensor_mismatch' ? 'bg-purple-600/30 border-purple-500 text-purple-300' : 'bg-slate-900 border-slate-800 text-slate-400'
+                }`}
+              >
+                🚨 Sensor Mismatch
+              </button>
+            </div>
+          </div>
+
+          <form onSubmit={handleTestTrace} className="space-y-3 text-xs">
+            <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="text-slate-400">Reported Latitude</label>
+                <label className="text-[10px] text-slate-400 block mb-0.5">Latitude</label>
                 <input
                   type="number"
-                  step="0.0001"
+                  step="any"
                   value={testLat}
                   onChange={(e) => setTestLat(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono"
-                  required
+                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 font-mono text-white"
                 />
               </div>
               <div>
-                <label className="text-slate-400">Reported Longitude</label>
+                <label className="text-[10px] text-slate-400 block mb-0.5">Longitude</label>
                 <input
                   type="number"
-                  step="0.0001"
+                  step="any"
                   value={testLng}
                   onChange={(e) => setTestLng(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono"
-                  required
+                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 font-mono text-white"
                 />
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-2">
               <div>
-                <label className="text-slate-400">Accuracy (meters)</label>
+                <label className="text-[10px] text-slate-400 block mb-0.5">Accuracy (m)</label>
                 <input
                   type="number"
-                  step="0.01"
+                  step="any"
                   value={testAccuracy}
                   onChange={(e) => setTestAccuracy(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono"
-                  required
+                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 font-mono text-white"
                 />
-                <span className="text-[10px] text-slate-500">Tip: set to 0.1m for fake GPS check</span>
               </div>
-
               <div>
-                <label className="text-slate-400">Accel Z (Gravity)</label>
+                <label className="text-[10px] text-slate-400 block mb-0.5">Accel X (m/s²)</label>
                 <input
                   type="number"
-                  step="0.01"
+                  step="any"
+                  value={testAccelX}
+                  onChange={(e) => setTestAccelX(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 font-mono text-white"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-400 block mb-0.5">Accel Z (m/s²)</label>
+                <input
+                  type="number"
+                  step="any"
                   value={testAccelZ}
                   onChange={(e) => setTestAccelZ(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono"
-                  required
+                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 font-mono text-white"
                 />
-                <span className="text-[10px] text-slate-500">Normal resting: ~9.81 m/s²</span>
               </div>
             </div>
 
             <button
               type="submit"
               disabled={testingTrace}
-              className="w-full py-3 px-4 rounded-xl font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition-all"
+              className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-purple-600/25"
             >
-              <Zap className="w-4 h-4 fill-white" />
-              <span>Evaluate Telemetry Report ({strategy})</span>
+              <Play className="w-4 h-4 fill-white" />
+              <span>{testingTrace ? 'Evaluating Anomaly Heuristics...' : `Run ${strategy} Evaluation`}</span>
             </button>
           </form>
 
-          {/* Test Evaluation Output */}
+          {/* Outcome Result */}
           {evalResult && (
-            <div className={`p-4 rounded-xl border text-xs space-y-2 animate-in fade-in ${
+            <div className={`p-4 rounded-xl border space-y-2 animate-in fade-in ${
               evalResult.isSpoofed ? 'bg-rose-500/10 border-rose-500/30 text-rose-300' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
             }`}>
-              <div className="flex items-center justify-between font-bold text-sm">
-                <span className="flex items-center gap-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-sm flex items-center gap-1.5">
                   {evalResult.isSpoofed ? <ShieldAlert className="w-5 h-5 text-rose-400" /> : <ShieldCheck className="w-5 h-5 text-emerald-400" />}
-                  Classification: {evalResult.isSpoofed ? 'SPOOFING ANOMALY DETECTED' : 'LEGITIMATE TRACE'}
+                  {evalResult.isSpoofed ? 'SPOOFING / ANOMALY DETECTED' : 'GENUINE AUTHENTIC GPS'}
                 </span>
-                <span className="font-mono text-white">Score: {evalResult.trustScore}/100</span>
+                <span className="text-xs font-mono font-bold">Trust Score: {evalResult.trustScore}/100</span>
               </div>
 
-              {evalResult.flags.length > 0 && (
-                <div className="pt-2 border-t border-slate-800 space-y-1">
-                  <div className="font-semibold text-slate-300">Triggered Heuristics & Flags:</div>
-                  <ul className="list-disc list-inside space-y-0.5 text-[11px]">
-                    {evalResult.flags.map((f, i) => (
-                      <li key={i} className="font-mono text-rose-400">{f}: {evalResult.details[i]}</li>
+              {evalResult.flags?.length > 0 && (
+                <div className="pt-2 border-t border-slate-800/80 text-xs space-y-1">
+                  <span className="text-slate-400 block font-semibold">Triggered Heuristics:</span>
+                  <div className="flex flex-wrap gap-1">
+                    {evalResult.flags.map((fl, i) => (
+                      <span key={i} className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 text-[10px] font-mono font-bold">
+                        {fl}
+                      </span>
+                    ))}
+                  </div>
+                  <ul className="list-disc list-inside text-[11px] text-slate-300 space-y-0.5 mt-1">
+                    {evalResult.details?.map((dt, i) => (
+                      <li key={i}>{dt}</li>
                     ))}
                   </ul>
                 </div>
               )}
             </div>
           )}
-
         </div>
 
-        {/* Right Column: Research Evaluation Harness Output */}
-        <div className="glass-card rounded-2xl p-6 border border-slate-800 space-y-4 flex flex-col justify-between">
-          <div className="space-y-4">
+        {/* Right: Academic CLI Evaluation Harness */}
+        <div className="glass-card rounded-2xl p-5 border border-slate-800 space-y-4 flex flex-col justify-between">
+          <div className="space-y-3">
             <div className="flex items-center justify-between">
               <h2 className="text-base font-bold text-white flex items-center gap-2">
-                <FileCode className="w-4 h-4 text-purple-400" />
-                CLI Evaluation Harness Output
+                <FileCode className="w-5 h-5 text-purple-400" />
+                CLI Benchmark Evaluation Harness
               </h2>
-
-              <button
-                onClick={handleRunHarness}
-                disabled={harnessRunning}
-                className="px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white text-xs font-bold shadow-lg shadow-purple-600/30 flex items-center gap-2 transition-all disabled:opacity-50"
-              >
-                <Play className="w-3.5 h-3.5 fill-white" />
-                <span>{harnessRunning ? 'Executing CLI Harness...' : 'Run Dataset Harness'}</span>
-              </button>
+              <span className="text-xs text-slate-400 font-mono">evalSpoofDetector.js</span>
             </div>
 
-            <p className="text-xs text-slate-400">
-              Executes <code className="text-indigo-300">server/scripts/evalSpoofDetector.js</code> against labeled CSV dataset <code className="text-indigo-300">sample_traces.csv</code> to output Accuracy, Precision, Recall, F1, and FPR metrics for the thesis results section.
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Executes the thesis evaluation benchmark across 1,000 labeled trace samples to compute academic confusion matrix metrics (Accuracy, Precision, Recall, Specificity, F1 Score).
             </p>
 
-            {harnessOutput ? (
-              <pre className="p-4 rounded-xl bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-300 overflow-x-auto max-h-[350px] leading-relaxed">
-                {harnessOutput}
-              </pre>
-            ) : (
-              <div className="p-8 rounded-xl bg-slate-900/60 border border-slate-800 text-center text-slate-500 text-xs">
-                Click "Run Dataset Harness" above to generate confusion matrix and statistical evaluation metrics.
-              </div>
-            )}
+            <button
+              onClick={handleRunHarness}
+              disabled={harnessRunning}
+              className="w-full py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-purple-300 border border-purple-500/30 font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors"
+            >
+              <Activity className={`w-4 h-4 ${harnessRunning ? 'animate-spin' : ''}`} />
+              <span>{harnessRunning ? 'Executing Benchmark Suite...' : `Run Harness on ${strategy}`}</span>
+            </button>
           </div>
+
+          {harnessOutput && (
+            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 text-[11px] font-mono text-emerald-400 overflow-x-auto max-h-64 whitespace-pre">
+              {harnessOutput}
+            </div>
+          )}
         </div>
 
       </div>

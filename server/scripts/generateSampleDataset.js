@@ -1,6 +1,6 @@
 /**
  * Script to generate a labeled CSV dataset of location traces for testing the evaluation harness.
- * Includes legitimate student walks and various spoofing attack vectors.
+ * Includes legitimate student walks and various spoofing attack vectors (Teleportation, Static Mock, Automated Scripts, Stationary Anomaly).
  */
 
 const fs = require('fs');
@@ -17,12 +17,12 @@ const rows = [
   'trace_id,student_id,lat,lng,accuracy,timestamp,accel_x,accel_y,accel_z,is_spoofed,ground_truth_label'
 ];
 
-// Base university location (e.g. Campus Quad: 14.5995, 120.9842)
-const baseLat = 14.5995;
-const baseLng = 120.9842;
+// Base university location (e.g. Campus Quad: 18.1960, 120.5927)
+const baseLat = 18.1960;
+const baseLng = 120.5927;
 let now = Date.now() - 3600000; // 1 hour ago
 
-// 1. Legitimate Student A: Walking around campus (3-5m accuracy, speed ~ 1.2 m/s, natural jitter)
+// 1. Legitimate Student A: Walking around campus (3-7m accuracy, speed ~ 1.2 m/s, natural jitter)
 let currentLat = baseLat;
 let currentLng = baseLng;
 for (let i = 1; i <= 20; i++) {
@@ -42,17 +42,25 @@ rows.push(`trace_spoof_1,STUDENT_SPOOF_1,${baseLat.toFixed(6)},${baseLng.toFixed
 spoofTime += 5000; // 5 sec later
 rows.push(`trace_spoof_2,STUDENT_SPOOF_1,${(baseLat + 0.05).toFixed(6)},${(baseLng + 0.05).toFixed(6)},5.00,${new Date(spoofTime).toISOString()},0.0,0.0,9.81,true,TELEPORT_ATTACK`);
 
-// 3. Spoofed Student C: Static Fake GPS App (Exact same accuracy 0.000000m repeatedly & 0 accel)
+// 3. Spoofed Student C: Static Fake GPS App (Exact same accuracy 0.1m & 0 accel)
 let staticTime = Date.now() - 2000000;
-for (let i = 1; i <= 10; i++) {
+for (let i = 1; i <= 6; i++) {
   staticTime += 5000;
   rows.push(`trace_static_${i},STUDENT_SPOOF_2,${(baseLat + 0.001).toFixed(6)},${(baseLng + 0.001).toFixed(6)},0.10,${new Date(staticTime).toISOString()},0.00,0.00,9.81,true,STATIC_MOCK_LOCATION`);
 }
 
-// 4. Spoofed Student D: Automated Script (Out-of-order timestamp & perfect 1000ms cadence with sensor zeroed)
+// 4. Spoofed Student D: Automated Script (Out-of-order timestamp & sensor zeroed)
 let scriptTime = Date.now() - 1000000;
-rows.push(`trace_script_1,STUDENT_SPOOF_3,${baseLat.toFixed(6)},${baseLng.toFixed(6)},1.00,${new Date(scriptTime).toISOString()},0.00,0.00,9.81,false,INITIAL`);
-rows.push(`trace_script_2,STUDENT_SPOOF_3,${(baseLat + 0.002).toFixed(6)},${(baseLng + 0.002).toFixed(6)},1.00,${new Date(scriptTime - 10000).toISOString()},0.00,0.00,9.81,true,OUT_OF_ORDER_TIMESTAMP`);
+rows.push(`trace_script_1,STUDENT_SPOOF_3,${baseLat.toFixed(6)},${baseLng.toFixed(6)},5.00,${new Date(scriptTime).toISOString()},0.00,0.00,9.81,false,INITIAL`);
+rows.push(`trace_script_2,STUDENT_SPOOF_3,${(baseLat + 0.002).toFixed(6)},${(baseLng + 0.002).toFixed(6)},5.00,${new Date(scriptTime - 10000).toISOString()},0.00,0.00,9.81,true,OUT_OF_ORDER_TIMESTAMP`);
+
+// 5. Spoofed Student E: Stationary Anomaly Signal (Near-zero displacement across 6+ minutes)
+let stationaryTime = Date.now() - 500000;
+for (let i = 1; i <= 6; i++) {
+  stationaryTime += 60000; // 1 minute per update = 6 minutes total
+  const isSpoofed = i >= 4; // After 4+ minutes with 0 displacement, stationary anomaly triggers
+  rows.push(`trace_stationary_${i},STUDENT_SPOOF_4,${(baseLat + 0.0005).toFixed(6)},${(baseLng + 0.0005).toFixed(6)},5.00,${new Date(stationaryTime).toISOString()},0.01,0.01,9.81,${isSpoofed},STATIONARY_SIGNAL_ANOMALY`);
+}
 
 // Write CSV
 fs.writeFileSync(csvFilePath, rows.join('\n'), 'utf8');

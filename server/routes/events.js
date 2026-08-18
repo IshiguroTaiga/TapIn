@@ -6,6 +6,7 @@ const {
   calculateCentroid,
   calculateMaxRadius
 } = require('../services/geofence');
+const { getEventCheckpoints } = require('../services/checkpointEngine');
 
 const router = express.Router();
 
@@ -28,7 +29,7 @@ function generateDefaultPolygon(centerLat, centerLng, radiusMeters = 100) {
 }
 
 /**
- * Format event object with parsed polygon coordinates
+ * Format event object with parsed polygon coordinates and checkpoints
  */
 function formatEvent(e) {
   if (!e) return null;
@@ -39,9 +40,16 @@ function formatEvent(e) {
     poly = generateDefaultPolygon(e.center_lat, e.center_lng, e.radius_m || 100);
   }
 
+  const checkpoints = getEventCheckpoints(e.id);
+
   return {
     ...e,
-    polygon_coordinates: poly
+    allow_duplicate_tasks: Boolean(e.allow_duplicate_tasks),
+    randomize_tasks: Boolean(e.randomize_tasks),
+    task_collision_window_minutes: e.task_collision_window_minutes || 10,
+    max_checkpoints: e.max_checkpoints || 3,
+    polygon_coordinates: poly,
+    checkpoints
   };
 }
 
@@ -177,6 +185,10 @@ router.post('/', authenticateToken, requireRole(['admin', 'superadmin']), (req, 
     course_filter = 'all',
     year_filter = 'all',
     status = 'active',
+    allow_duplicate_tasks = false,
+    randomize_tasks = false,
+    task_collision_window_minutes = 10,
+    max_checkpoints = 3,
     windows = []
   } = req.body;
 
@@ -213,15 +225,15 @@ router.post('/', authenticateToken, requireRole(['admin', 'superadmin']), (req, 
     }
 
     db.prepare(`
-      INSERT INTO events (id, name, description, center_lat, center_lng, radius_m, polygon_coordinates, grace_minutes, college_filter, course_filter, year_filter, status, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(parsedId, name, description || '', parseFloat(center_lat), parseFloat(center_lng), parseFloat(radius_m), polygonString, parseInt(grace_minutes), college_filter, course_filter, year_filter, status, req.user.id);
+      INSERT INTO events (id, name, description, center_lat, center_lng, radius_m, polygon_coordinates, grace_minutes, college_filter, course_filter, year_filter, status, allow_duplicate_tasks, randomize_tasks, task_collision_window_minutes, max_checkpoints, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(parsedId, name, description || '', parseFloat(center_lat), parseFloat(center_lng), parseFloat(radius_m), polygonString, parseInt(grace_minutes), college_filter, course_filter, year_filter, status, allow_duplicate_tasks ? 1 : 0, randomize_tasks ? 1 : 0, parseInt(task_collision_window_minutes || 10), parseInt(max_checkpoints || 3), req.user.id);
     eventId = parsedId;
   } else {
     const result = db.prepare(`
-      INSERT INTO events (name, description, center_lat, center_lng, radius_m, polygon_coordinates, grace_minutes, college_filter, course_filter, year_filter, status, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(name, description || '', parseFloat(center_lat), parseFloat(center_lng), parseFloat(radius_m), polygonString, parseInt(grace_minutes), college_filter, course_filter, year_filter, status, req.user.id);
+      INSERT INTO events (name, description, center_lat, center_lng, radius_m, polygon_coordinates, grace_minutes, college_filter, course_filter, year_filter, status, allow_duplicate_tasks, randomize_tasks, task_collision_window_minutes, max_checkpoints, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(name, description || '', parseFloat(center_lat), parseFloat(center_lng), parseFloat(radius_m), polygonString, parseInt(grace_minutes), college_filter, course_filter, year_filter, status, allow_duplicate_tasks ? 1 : 0, randomize_tasks ? 1 : 0, parseInt(task_collision_window_minutes || 10), parseInt(max_checkpoints || 3), req.user.id);
     eventId = result.lastInsertRowid;
   }
 
@@ -266,6 +278,10 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'superadmin']), (req
     course_filter,
     year_filter,
     status,
+    allow_duplicate_tasks,
+    randomize_tasks,
+    task_collision_window_minutes,
+    max_checkpoints,
     windows
   } = req.body;
 
@@ -290,6 +306,9 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'superadmin']), (req
       db.prepare(`UPDATE event_windows SET event_id = ? WHERE event_id = ?`).run(targetId, activeId);
       db.prepare(`UPDATE attendance_logs SET event_id = ? WHERE event_id = ?`).run(targetId, activeId);
       db.prepare(`UPDATE violations SET event_id = ? WHERE event_id = ?`).run(targetId, activeId);
+      db.prepare(`UPDATE event_checkpoints SET event_id = ? WHERE event_id = ?`).run(targetId, activeId);
+      db.prepare(`UPDATE student_checkpoint_visits SET event_id = ? WHERE event_id = ?`).run(targetId, activeId);
+      db.prepare(`UPDATE student_task_assignments SET event_id = ? WHERE event_id = ?`).run(targetId, activeId);
       db.pragma('foreign_keys = ON');
       activeId = targetId;
     } catch (err) {
@@ -326,7 +345,11 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'superadmin']), (req
       college_filter = ?,
       course_filter = ?,
       year_filter = ?,
-      status = ?
+      status = ?,
+      allow_duplicate_tasks = ?,
+      randomize_tasks = ?,
+      task_collision_window_minutes = ?,
+      max_checkpoints = ?
     WHERE id = ?
   `).run(
     name !== undefined ? name : event.name,
@@ -340,6 +363,10 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'superadmin']), (req
     course_filter !== undefined ? course_filter : event.course_filter,
     year_filter !== undefined ? year_filter : event.year_filter,
     status !== undefined ? status : event.status,
+    allow_duplicate_tasks !== undefined ? (allow_duplicate_tasks ? 1 : 0) : event.allow_duplicate_tasks,
+    randomize_tasks !== undefined ? (randomize_tasks ? 1 : 0) : event.randomize_tasks,
+    task_collision_window_minutes !== undefined ? parseInt(task_collision_window_minutes) : event.task_collision_window_minutes,
+    max_checkpoints !== undefined ? parseInt(max_checkpoints) : event.max_checkpoints,
     activeId
   );
 

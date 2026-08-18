@@ -47,7 +47,42 @@ function seed() {
 
   sampleStudents.forEach(st => insertStudent.run(...st));
 
-  console.log('[Seed] Database successfully seeded!');
+  // 4. Seed Checkpoints and Task Pools for Active Events
+  const events = db.prepare(`SELECT id, center_lat, center_lng FROM events`).all();
+  events.forEach(ev => {
+    const countCheckpoints = db.prepare(`SELECT COUNT(*) as cnt FROM event_checkpoints WHERE event_id = ?`).get(ev.id).cnt;
+    if (countCheckpoints === 0) {
+      const cLat = ev.center_lat;
+      const cLng = ev.center_lng;
+
+      // Seed 3 nested checkpoints
+      const cpStmt = db.prepare(`
+        INSERT INTO event_checkpoints (event_id, checkpoint_order, name, description, lat, lng, radius_m)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      const taskStmt = db.prepare(`
+        INSERT INTO checkpoint_tasks (checkpoint_id, title, description, task_type, instructions, verification_rule)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
+
+      // Checkpoint 1
+      const cp1 = cpStmt.run(ev.id, 1, 'Station 1 - East Entrance & Registration', 'Main registration and kit distribution desk', cLat + 0.0003, cLng + 0.0003, 25.0);
+      taskStmt.run(cp1.lastInsertRowid, 'Capture Registration Banner', 'Take a clear verification photo of the registration desk and official welcome banner.', 'photo', 'Position camera to show the banner clearly without obstructing attendees.', 'EXIF_METADATA_AND_PHASH');
+      taskStmt.run(cp1.lastInsertRowid, 'Event Schedule Board Photo', 'Photograph the physical program schedule posted near the entrance.', 'photo', 'Ensure the schedule text is legible.', 'EXIF_METADATA_AND_PHASH');
+
+      // Checkpoint 2
+      const cp2 = cpStmt.run(ev.id, 2, 'Station 2 - Innovation Exhibit Showcase', 'Research poster presentations and project demo booths', cLat - 0.0002, cLng + 0.0002, 25.0);
+      taskStmt.run(cp2.lastInsertRowid, 'Exhibit Booth Verification', 'Take a photo of any student research demo booth in this section.', 'photo', 'Capture the booth poster or display screen.', 'EXIF_METADATA_AND_PHASH');
+      taskStmt.run(cp2.lastInsertRowid, 'Keynote Hall Number', 'Enter the designated room or hall number for the upcoming keynote.', 'text', 'Check the door sign or floor directory and type the room number.', 'EXACT_MATCH');
+
+      // Checkpoint 3
+      const cp3 = cpStmt.run(ev.id, 3, 'Station 3 - South Exit & Feedback Terminal', 'Evaluation kiosk and certificate stamping station', cLat - 0.0003, cLng - 0.0003, 25.0);
+      taskStmt.run(cp3.lastInsertRowid, 'Feedback Terminal Screen Photo', 'Photograph the completed survey confirmation screen at the terminal.', 'photo', 'Show the green submission confirmation checkmark.', 'EXIF_METADATA_AND_PHASH');
+    }
+  });
+
+  console.log('[Seed] Database successfully seeded with checkpoints and task pools!');
 }
 
 if (require.main === module) {

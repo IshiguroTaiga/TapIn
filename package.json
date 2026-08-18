@@ -1,7 +1,7 @@
 {
   "name": "tapin",
   "version": "1.0.0",
-  "description": "Geofencing-based real-time university attendance system with GPS spoofing-detection research module",
+  "description": "Geofencing-based real-time university attendance system with GPS spoofing-detection research module, asymmetric cryptographic authentication, and multi-checkpoint task verification",
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
@@ -9,6 +9,8 @@
     "build": "cd client && npm install && npm run build",
     "test": "node server/scripts/testGeofence.js",
     "test:geofence": "node server/scripts/testGeofence.js",
+    "test:features": "node server/scripts/testNewFeatures.js",
+    "test:all": "node server/scripts/testGeofence.js && node server/scripts/testNewFeatures.js",
     "eval:rule": "node server/scripts/evalSpoofDetector.js --strategy rule-based",
     "eval:ml": "node server/scripts/evalSpoofDetector.js --strategy ml-classifier",
     "generate-dataset": "node server/scripts/generateSampleDataset.js"
@@ -20,21 +22,23 @@
     "research",
     "pwa",
     "socket.io",
-    "sqlite"
+    "sqlite",
+    "ed25519",
+    "checkpoints"
   ],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "better-sqlite3": "^11.1.2",
     "bcryptjs": "^3.0.3",
+    "better-sqlite3": "^11.1.2",
     "cors": "^2.8.5",
     "csv-parser": "^3.2.0",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.5-lts.1",
-    "sqlite3": "^5.1.7",
     "socket.io": "^4.8.1",
+    "sqlite3": "^5.1.7",
     "xlsx": "^0.18.5"
   }
 }

@@ -28,18 +28,28 @@ class SpoofDetector {
   }
 
   /**
+   * Update configuration parameters for rule-based strategy
+   */
+  updateConfig(config) {
+    if (this.strategies['rule-based']) {
+      this.strategies['rule-based'].updateConfig(config);
+    }
+  }
+
+  /**
    * Evaluates a location report trace against a student's previous trace history.
    *
    * @param {Object} locationReport { lat, lng, accuracy, timestamp, motionData }
    * @param {Array} history Array of previous traces
    * @param {String} [overrideStrategy] Optional strategy name for this call
+   * @param {Object} [evalOptions] Optional dynamic thresholds
    * @returns {Object} Evaluation outcome
    */
-  evaluate(locationReport, history = [], overrideStrategy = null) {
+  evaluate(locationReport, history = [], overrideStrategy = null, evalOptions = {}) {
     const strategyName = overrideStrategy || this.activeStrategy;
     const strategy = this.strategies[strategyName] || this.strategies['rule-based'];
 
-    return strategy.evaluate(locationReport, history);
+    return strategy.evaluate(locationReport, history, evalOptions);
   }
 }
 

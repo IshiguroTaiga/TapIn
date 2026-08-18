@@ -13,7 +13,9 @@ import {
   AlertTriangle,
   ShieldAlert,
   FileSpreadsheet,
-  FileCode
+  FileCode,
+  Key,
+  ShieldCheck
 } from 'lucide-react';
 
 import io from 'socket.io-client';
@@ -99,94 +101,95 @@ export default function AttendanceLogs() {
       'College': l.college,
       'Course': l.course,
       'Year': l.year,
-      'Action': l.action.toUpperCase(),
-      'In Geofence Polygon': l.in_range ? 'Yes' : 'No',
+      'Section': l.section || 'A',
+      'Action': l.action,
+      'Geofence': l.in_range ? 'Inside Polygon' : 'Outside Boundary',
       'Trust Score': l.trust_score,
-      'Spoof Flagged': l.is_spoofed ? 'YES' : 'No',
-      'Flags': l.spoof_flags || '',
+      'Signature Valid': l.signature_valid ? 'Verified (Ed25519)' : 'Unsigned',
+      'Spoofed': l.is_spoofed ? 'YES' : 'No',
+      'Spoof Flags': l.spoof_flags || '',
       'Status': l.status
     }));
 
-    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Attendance Logs');
-    XLSX.writeFile(workbook, `tapin_attendance_report_${Date.now()}.xlsx`);
+    const ws = XLSX.utils.json_to_sheet(dataToExport);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Attendance_Logs');
+    XLSX.writeFile(wb, `tapin_attendance_${Date.now()}.xlsx`);
   };
 
   const exportPDF = () => {
     const doc = new jsPDF('landscape');
-    doc.setFontSize(16);
-    doc.text('TapIn University Attendance Report', 14, 15);
-    doc.setFontSize(10);
-    doc.text(`Generated on: ${new Date().toLocaleString()} | Filtered Count: ${filteredLogs.length}`, 14, 22);
+    doc.setFontSize(14);
+    doc.text('TapIn Attendance Records Report', 14, 15);
+    doc.setFontSize(9);
+    doc.text(`Generated: ${new Date().toLocaleString()} | Total Records: ${filteredLogs.length}`, 14, 22);
 
-    const tableColumn = ['Timestamp', 'Student ID', 'Name', 'College', 'Action', 'In Range', 'Trust', 'Status'];
-    const tableRows = filteredLogs.map(l => [
+    const tableData = filteredLogs.map(l => [
       new Date(l.timestamp).toLocaleString(),
       l.student_id,
       l.name,
       l.college,
+      l.event_name,
       l.action.toUpperCase(),
-      l.in_range ? 'Yes' : 'No',
+      l.in_range ? 'Inside Polygon' : 'Outside',
+      l.signature_valid ? 'Verified' : 'Unsigned',
       `${l.trust_score}/100`,
-      l.status
+      l.status.toUpperCase()
     ]);
 
     doc.autoTable({
-      head: [tableColumn],
-      body: tableRows,
-      startY: 28,
+      head: [['Timestamp', 'Student ID', 'Name', 'College', 'Event', 'Action', 'Geofence', 'Signature', 'Trust', 'Status']],
+      body: tableData,
+      startY: 26,
       theme: 'grid',
-      headStyles: { fillColor: [79, 70, 229] }
+      styles: { fontSize: 8 }
     });
 
-    doc.save(`tapin_attendance_summary_${Date.now()}.pdf`);
+    doc.save(`tapin_attendance_${Date.now()}.pdf`);
   };
 
   return (
     <div className="w-full max-w-7xl mx-auto px-1 sm:px-4 py-4 sm:py-8 space-y-4 sm:space-y-6">
       
-      {/* Header & Export Bar */}
+      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight flex items-center gap-2">
             <FileText className="w-5 h-5 sm:w-6 sm:h-6 text-indigo-400" />
-            Attendance History & Export Center
+            Attendance Logs & Audit Trail
           </h1>
-          <p className="text-xs text-slate-400">Filter, inspect, and export verified attendance records and spoofing telemetry.</p>
+          <p className="text-xs text-slate-400">Complete historical records with Ed25519 signature verification, geofence, and spoof audits.</p>
         </div>
 
-        {/* Export Buttons */}
         <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={exportCSV}
-            className="px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-white flex items-center gap-1.5 transition-colors cursor-pointer min-h-[44px]"
+            className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
           >
             <FileCode className="w-4 h-4 text-emerald-400" />
-            <span>CSV</span>
+            <span>Export CSV</span>
           </button>
 
           <button
             onClick={exportExcel}
-            className="px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-white flex items-center gap-1.5 transition-colors cursor-pointer min-h-[44px]"
+            className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
           >
             <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
-            <span>Excel</span>
+            <span>Export Excel</span>
           </button>
 
           <button
             onClick={exportPDF}
-            className="px-3.5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-lg shadow-indigo-600/30 flex items-center gap-1.5 transition-colors cursor-pointer min-h-[44px]"
+            className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-lg shadow-indigo-600/30 transition-colors cursor-pointer"
           >
             <Download className="w-4 h-4" />
-            <span>PDF Report</span>
+            <span>Export PDF</span>
           </button>
         </div>
       </div>
 
-      {/* Filter Control Panel */}
-      <div className="glass-panel p-3.5 sm:p-4 rounded-2xl border border-slate-800 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
-        
+      {/* Filter Controls */}
+      <div className="glass-card rounded-2xl p-4 border border-slate-800 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 text-xs">
         <div>
           <label className="text-slate-400 text-[10px] uppercase font-bold block mb-1">Event</label>
           <select
@@ -210,7 +213,7 @@ export default function AttendanceLogs() {
           >
             <option value="all">All Colleges</option>
             {MMSU_COLLEGES.map((c) => (
-              <option key={c} value={c}>{c}</option>
+              <option key={c.name} value={c.name}>{c.name}</option>
             ))}
           </select>
         </div>
@@ -244,20 +247,19 @@ export default function AttendanceLogs() {
           </select>
         </div>
 
-        <div>
-          <label className="text-slate-400 text-[10px] uppercase font-bold block mb-1">Search ID / Name</label>
+        <div className="sm:col-span-2">
+          <label className="text-slate-400 text-[10px] uppercase font-bold block mb-1">Search ID / Name / Event</label>
           <div className="relative">
             <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-2.5" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search..."
+              placeholder="Search student or event..."
               className="w-full pl-8 pr-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white"
             />
           </div>
         </div>
-
       </div>
 
       {/* Logs Table */}
@@ -270,6 +272,7 @@ export default function AttendanceLogs() {
               <th className="py-3 px-3">Event</th>
               <th className="py-3 px-3">Action</th>
               <th className="py-3 px-3">Geofence</th>
+              <th className="py-3 px-3">Credential Auth</th>
               <th className="py-3 px-3">Trust Score</th>
               <th className="py-3 px-3">Status</th>
             </tr>
@@ -277,11 +280,11 @@ export default function AttendanceLogs() {
           <tbody className="divide-y divide-slate-800/60">
             {loading ? (
               <tr>
-                <td colSpan="7" className="py-8 text-center text-slate-500">Loading attendance history...</td>
+                <td colSpan="8" className="py-8 text-center text-slate-500">Loading attendance history...</td>
               </tr>
             ) : filteredLogs.length === 0 ? (
               <tr>
-                <td colSpan="7" className="py-8 text-center text-slate-500">No attendance logs matching selected criteria.</td>
+                <td colSpan="8" className="py-8 text-center text-slate-500">No attendance logs matching selected criteria.</td>
               </tr>
             ) : (
               filteredLogs.map((log) => (
@@ -310,11 +313,23 @@ export default function AttendanceLogs() {
                   <td className="py-3 px-3">
                     {log.in_range ? (
                       <span className="text-emerald-400 font-medium flex items-center gap-1">
-                        <CheckCircle className="w-3.5 h-3.5" /> Inside Polygon
+                        <CheckCircle className="w-3.5 h-3.5" /> In Polygon
                       </span>
                     ) : (
                       <span className="text-amber-400 font-medium flex items-center gap-1">
                         <AlertTriangle className="w-3.5 h-3.5" /> Outside Boundary
+                      </span>
+                    )}
+                  </td>
+
+                  <td className="py-3 px-3">
+                    {log.signature_valid ? (
+                      <span className="text-emerald-400 font-medium flex items-center gap-1 text-[11px]">
+                        <ShieldCheck className="w-3.5 h-3.5" /> Ed25519 Signed
+                      </span>
+                    ) : (
+                      <span className="text-amber-400 font-medium flex items-center gap-1 text-[11px]">
+                        <Key className="w-3.5 h-3.5" /> Unsigned
                       </span>
                     )}
                   </td>
@@ -327,7 +342,7 @@ export default function AttendanceLogs() {
                         {log.trust_score}/100
                       </span>
                       {log.spoof_flags && (
-                        <span className="text-[9px] px-1 py-0.5 bg-rose-500/20 text-rose-400 rounded">
+                        <span className="text-[9px] px-1 py-0.5 bg-rose-500/20 text-rose-400 rounded max-w-[120px] truncate" title={log.spoof_flags}>
                           {log.spoof_flags}
                         </span>
                       )}

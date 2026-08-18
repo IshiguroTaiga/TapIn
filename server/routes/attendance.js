@@ -2,13 +2,14 @@ const express = require('express');
 const db = require('../db');
 const { isWithinPolygonGeofence, calculateDistance, normalizePolygon } = require('../services/geofence');
 const { spoofDetector } = require('../services/spoofDetection');
+const { verifySignature } = require('../services/cryptoAuth');
 const { authenticateToken } = require('../middleware/auth');
 
 const router = express.Router();
 
 // Student Submission: Time In / Time Out
 router.post('/submit', (req, res) => {
-  const { student_id, lat, lng, accuracy, timestamp, motionData, forceAction, strategy } = req.body;
+  const { student_id, lat, lng, accuracy, timestamp, motionData, forceAction, strategy, signature, evalConfig } = req.body;
 
   if (!student_id || lat === undefined || lng === undefined) {
     return res.status(400).json({ error: 'Student ID, latitude, and longitude are required' });
@@ -22,7 +23,32 @@ router.post('/submit', (req, res) => {
     });
   }
 
-  // 2. Fetch Active Event (Honoring event_id if provided by student event selector)
+  // 2. Cryptographic Credential Signature Verification (Replacing device biometrics)
+  let signatureValid = 1;
+  let signatureChecked = false;
+  let signatureError = null;
+
+  if (student.public_key) {
+    signatureChecked = true;
+    if (!signature) {
+      signatureValid = 0;
+      signatureError = 'Signed credential required: student public key is registered, but no digital signature was presented.';
+    } else {
+      const payloadToVerify = {
+        student_id: student.student_id,
+        event_id: req.body.event_id || 0,
+        lat: parseFloat(lat),
+        lng: parseFloat(lng)
+      };
+      const isValid = verifySignature(student.public_key, payloadToVerify, signature);
+      signatureValid = isValid ? 1 : 0;
+      if (!isValid) {
+        signatureError = 'Cryptographic Signature Verification Failed! Presented credential token signature did not match public key on file.';
+      }
+    }
+  }
+
+  // 3. Fetch Active Event (Honoring event_id if provided by student event selector)
   const { event_id } = req.body;
   let activeEvent;
   if (event_id) {
@@ -36,14 +62,14 @@ router.post('/submit', (req, res) => {
     return res.status(400).json({ error: 'No active university event is currently open for attendance recording.' });
   }
 
-  // 3. Verify College Eligibility Filter (Strict restriction)
+  // 4. Verify College Eligibility Filter (Strict restriction)
   if (activeEvent.college_filter !== 'all' && activeEvent.college_filter !== student.college) {
     return res.status(403).json({
       error: `Access Restricted! This event is exclusive to ${activeEvent.college_filter} students. Your recorded college is ${student.college}.`
     });
   }
 
-  // 3. Auto-detect action (Time In vs Time Out) if not explicitly forced
+  // 5. Auto-detect action (Time In vs Time Out) if not explicitly forced
   const existingLogs = db.prepare(`
     SELECT * FROM attendance_logs 
     WHERE event_id = ? AND student_id = ? 
@@ -64,7 +90,7 @@ router.post('/submit', (req, res) => {
     }
   }
 
-  // 4. Ray-Casting Point-in-Polygon Geofence Verification with Fast Pre-filtering
+  // 6. Ray-Casting Point-in-Polygon Geofence Verification with Fast Pre-filtering
   const polygon = activeEvent.polygon_coordinates ? normalizePolygon(activeEvent.polygon_coordinates) : [];
   const geofenceResult = isWithinPolygonGeofence([parseFloat(lat), parseFloat(lng)], polygon, {
     centerLat: activeEvent.center_lat,
@@ -75,7 +101,15 @@ router.post('/submit', (req, res) => {
   const inRange = geofenceResult.inRange;
   const distance = geofenceResult.distanceToCentroid;
 
-  // 5. GPS Spoofing Detection Module Pass
+  // 7. Dynamic Spoof Settings & GPS Spoofing Detection Pass (Speed + Accuracy + Timing + Accelerometer + Stationary Anomaly)
+  const windowSetting = db.prepare(`SELECT value FROM system_settings WHERE key = 'stationary_window_seconds'`).get();
+  const thresholdSetting = db.prepare(`SELECT value FROM system_settings WHERE key = 'stationary_movement_threshold_m'`).get();
+
+  const dynamicEvalOptions = {
+    stationaryWindowSeconds: evalConfig?.stationaryWindowSeconds || (windowSetting ? parseFloat(windowSetting.value) : 300),
+    stationaryThresholdMeters: evalConfig?.stationaryThresholdMeters || (thresholdSetting ? parseFloat(thresholdSetting.value) : 1.0)
+  };
+
   const studentHistory = existingLogs.map(l => ({
     lat: l.lat,
     lng: l.lng,
@@ -91,20 +125,23 @@ router.post('/submit', (req, res) => {
     motionData
   };
 
-  const spoofEval = spoofDetector.evaluate(locationReport, studentHistory, strategy || 'rule-based');
+  const spoofEval = spoofDetector.evaluate(locationReport, studentHistory, strategy || 'rule-based', dynamicEvalOptions);
 
-  // 6. Grace Period & Status Classification
+  // 8. Grace Period & Status Classification
   let status = 'valid';
   let rejected = false;
   let rejectionReason = null;
 
-  if (spoofEval.isSpoofed) {
+  if (signatureChecked && signatureValid === 0) {
+    rejected = true;
+    rejectionReason = signatureError;
+    status = 'rejected';
+  } else if (spoofEval.isSpoofed) {
     rejected = true;
     rejectionReason = `GPS Anomaly / Spoofing Detected! Trust score: ${spoofEval.trustScore}/100. Flags: ${spoofEval.flags.join(', ')}`;
     status = 'rejected';
   } else if (!inRange) {
     // Check if student is within configured grace period distance/time
-    // Borderline acceptance if student is slightly outside polygon boundary (e.g. within 2.2x bounding radius or within 100m)
     const borderlineTolerance = Math.max(activeEvent.radius_m * 2.2, 100);
     if (distance <= borderlineTolerance) {
       status = 'borderline';
@@ -115,12 +152,12 @@ router.post('/submit', (req, res) => {
     }
   }
 
-  // 7. Save Log in Database
+  // 9. Save Log in Database
   const logTimestamp = timestamp || new Date().toISOString();
   const insertStmt = db.prepare(`
     INSERT INTO attendance_logs 
-    (event_id, student_id, action, lat, lng, accuracy, timestamp, in_range, trust_score, is_spoofed, spoof_flags, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    (event_id, student_id, action, lat, lng, accuracy, timestamp, in_range, trust_score, is_spoofed, spoof_flags, status, signature_valid, signature_payload)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   insertStmt.run(
@@ -135,7 +172,9 @@ router.post('/submit', (req, res) => {
     spoofEval.trustScore,
     spoofEval.isSpoofed ? 1 : 0,
     spoofEval.flags.join(','),
-    status
+    status,
+    signatureValid,
+    signature ? String(signature).substring(0, 128) : null
   );
 
   const responsePayload = {
@@ -147,7 +186,14 @@ router.post('/submit', (req, res) => {
       year: student.year,
       course: student.course,
       college: student.college,
-      section: student.section || 'A'
+      section: student.section || 'A',
+      hasKeyEnrolled: !!student.public_key
+    },
+    credentialAuth: {
+      enrolled: !!student.public_key,
+      signatureChecked,
+      signatureValid: signatureValid === 1,
+      cryptography: 'Ed25519 Public-Key Digital Signature (Zero Device-Biometric Storage)'
     },
     event: {
       id: activeEvent.id,
@@ -169,7 +215,12 @@ router.post('/submit', (req, res) => {
       isSpoofed: spoofEval.isSpoofed,
       flags: spoofEval.flags,
       details: spoofEval.details,
-      strategyUsed: spoofEval.strategy
+      strategyUsed: spoofEval.strategy,
+      stationaryMetrics: {
+        windowSeconds: dynamicEvalOptions.stationaryWindowSeconds,
+        thresholdMeters: dynamicEvalOptions.stationaryThresholdMeters,
+        displacementMeters: spoofEval.metrics?.stationaryDisplacement || 0
+      }
     },
     status,
     timestamp: logTimestamp,
@@ -180,7 +231,7 @@ router.post('/submit', (req, res) => {
       : `Successfully recorded ${action.toUpperCase()} for ${student.name}!`
   };
 
-  // 8. Emit Real-time Socket.io Update to Live Dashboard
+  // 10. Emit Real-time Socket.io Update to Live Dashboard
   const reqIo = req.app.get('io');
   if (reqIo) {
     reqIo.emit('attendance_updated', responsePayload);
@@ -207,7 +258,7 @@ router.get('/live/:eventId', authenticateToken, (req, res) => {
 
   // Latest log per student for this event
   const latestLogs = db.prepare(`
-    SELECT l.*, s.name, s.year, s.course, s.college, s.section
+    SELECT l.*, s.name, s.year, s.course, s.college, s.section, (s.public_key IS NOT NULL) as has_key_enrolled
     FROM attendance_logs l
     JOIN students s ON l.student_id = s.student_id
     WHERE l.event_id = ?
@@ -246,7 +297,7 @@ router.get('/history', authenticateToken, (req, res) => {
   const { event_id, college, course, year, status } = req.query;
 
   let query = `
-    SELECT l.*, s.name, s.year, s.course, s.college, s.section, e.name as event_name
+    SELECT l.*, s.name, s.year, s.course, s.college, s.section, (s.public_key IS NOT NULL) as has_key_enrolled, e.name as event_name
     FROM attendance_logs l
     JOIN students s ON l.student_id = s.student_id
     JOIN events e ON l.event_id = e.id
@@ -286,7 +337,7 @@ router.get('/export/csv', authenticateToken, (req, res) => {
   const { event_id } = req.query;
   let query = `
     SELECT l.id, l.timestamp, l.student_id, s.name, s.college, s.course, s.year, s.section,
-           l.action, l.in_range, l.trust_score, l.is_spoofed, l.spoof_flags, l.status, e.name as event_name
+           l.action, l.in_range, l.trust_score, l.is_spoofed, l.spoof_flags, l.status, l.signature_valid, e.name as event_name
     FROM attendance_logs l
     JOIN students s ON l.student_id = s.student_id
     JOIN events e ON l.event_id = e.id
@@ -300,7 +351,7 @@ router.get('/export/csv', authenticateToken, (req, res) => {
 
   const logs = db.prepare(query).all(...params);
 
-  const headers = ['Log ID', 'Timestamp', 'Student ID', 'Student Name', 'College', 'Course', 'Year', 'Section', 'Action', 'In Range', 'Trust Score', 'Spoofed', 'Spoof Flags', 'Status', 'Event Name'];
+  const headers = ['Log ID', 'Timestamp', 'Student ID', 'Student Name', 'College', 'Course', 'Year', 'Section', 'Action', 'In Range', 'Trust Score', 'Spoofed', 'Spoof Flags', 'Signature Valid', 'Status', 'Event Name'];
   const rows = logs.map(l => [
     l.id,
     l.timestamp,
@@ -315,6 +366,7 @@ router.get('/export/csv', authenticateToken, (req, res) => {
     l.trust_score,
     l.is_spoofed ? 'YES' : 'No',
     `"${l.spoof_flags || ''}"`,
+    l.signature_valid ? 'Verified' : 'Invalid/Missing',
     l.status,
     `"${l.event_name}"`
   ]);

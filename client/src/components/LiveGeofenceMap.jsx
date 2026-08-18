@@ -50,12 +50,14 @@ export default function LiveGeofenceMap({
   studentAccuracy: _studentAccuracy,
   inRange,
   studentsList = [],
+  activeCheckpoint = null,
   height = '240px'
 }) {
   const mapContainerRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const eventPolygonRef = useRef(null);
   const vertexMarkersGroupRef = useRef(null);
+  const checkpointLayersGroupRef = useRef(null);
   const centerMarkerRef = useRef(null);
   const studentMarkerRef = useRef(null);
   const studentMarkersGroupRef = useRef(null);
@@ -82,6 +84,7 @@ export default function LiveGeofenceMap({
       }).addTo(map);
 
       vertexMarkersGroupRef.current = L.layerGroup().addTo(map);
+      checkpointLayersGroupRef.current = L.layerGroup().addTo(map);
       studentMarkersGroupRef.current = L.layerGroup().addTo(map);
       mapInstanceRef.current = map;
     }
@@ -92,13 +95,14 @@ export default function LiveGeofenceMap({
         mapInstanceRef.current = null;
         eventPolygonRef.current = null;
         vertexMarkersGroupRef.current = null;
+        checkpointLayersGroupRef.current = null;
         centerMarkerRef.current = null;
         studentMarkerRef.current = null;
       }
     };
   }, []);
 
-  // 2. Render and Synchronize Event Polygon, Vertex Nodes, and Centroid Star
+  // 2. Render and Synchronize Event Polygon, Checkpoint Zones, and Centroid Star
   useEffect(() => {
     if (!mapInstanceRef.current || !event) return;
     const map = mapInstanceRef.current;
@@ -152,7 +156,7 @@ export default function LiveGeofenceMap({
       eventPolygonRef.current = L.polygon(polygonCoords, {
         color: '#818cf8',
         fillColor: '#6366f1',
-        fillOpacity: 0.28,
+        fillOpacity: 0.22,
         weight: 3,
         dashArray: '6, 6'
       }).addTo(map);
@@ -186,6 +190,57 @@ export default function LiveGeofenceMap({
       });
     }
 
+    // 2b. Render Checkpoints Nested Inside Polygon
+    if (checkpointLayersGroupRef.current) {
+      checkpointLayersGroupRef.current.clearLayers();
+
+      const checkpoints = event.checkpoints || [];
+      checkpoints.forEach((cp, idx) => {
+        const cpLat = parseFloat(cp.lat);
+        const cpLng = parseFloat(cp.lng);
+        const cpRadius = parseFloat(cp.radius_m) || 20;
+        const isMatched = activeCheckpoint && (activeCheckpoint.id === cp.id || activeCheckpoint.name === cp.name);
+
+        const circleColor = isMatched ? '#10b981' : '#06b6d4';
+        const circleFill = isMatched ? '#10b981' : '#06b6d4';
+
+        // Checkpoint radius circle
+        L.circle([cpLat, cpLng], {
+          radius: cpRadius,
+          color: circleColor,
+          fillColor: circleFill,
+          fillOpacity: isMatched ? 0.35 : 0.2,
+          weight: 2,
+          dashArray: '4, 4'
+        }).addTo(checkpointLayersGroupRef.current);
+
+        // Checkpoint numbered badge marker
+        const cpIcon = L.divIcon({
+          className: 'checkpoint-pin',
+          html: `<div style="
+            width: 24px; 
+            height: 24px; 
+            background: ${isMatched ? 'linear-gradient(135deg, #10b981, #059669)' : 'linear-gradient(135deg, #06b6d4, #0891b2)'}; 
+            border: 2px solid #ffffff; 
+            border-radius: 50%; 
+            box-shadow: 0 0 12px ${isMatched ? 'rgba(16, 185, 129, 0.9)' : 'rgba(6, 182, 212, 0.9)'};
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 10px;
+            font-weight: 900;
+          ">C${cp.checkpoint_order || (idx + 1)}</div>`,
+          iconSize: [24, 24],
+          iconAnchor: [12, 12]
+        });
+
+        L.marker([cpLat, cpLng], { icon: cpIcon })
+          .addTo(checkpointLayersGroupRef.current)
+          .bindPopup(`<b>${cp.name || 'Checkpoint #' + (idx + 1)}</b><br/>Zone Radius: ${cpRadius}m<br/>Tasks in Pool: ${(cp.tasks || []).length}`);
+      });
+    }
+
     if (!studentCoords && eventPolygonRef.current) {
       try {
         const polyBounds = eventPolygonRef.current.getBounds();
@@ -194,7 +249,7 @@ export default function LiveGeofenceMap({
         }
       } catch (e) {}
     }
-  }, [event?.id, event?.center_lat, event?.center_lng, JSON.stringify(event?.polygon_coordinates)]);
+  }, [event?.id, event?.center_lat, event?.center_lng, JSON.stringify(event?.polygon_coordinates), JSON.stringify(event?.checkpoints), activeCheckpoint?.id]);
 
   // 3. Update Student Location Marker on Map
   useEffect(() => {
@@ -234,7 +289,7 @@ export default function LiveGeofenceMap({
       studentMarkerRef.current.setIcon(studentIcon);
     }
 
-    // Adjust Map view to encompass both Venue Polygon / Center and Student Location
+    // Adjust Map view to encompass Venue Polygon and Student Location
     if (event) {
       const polygonCoords = normalizePolygon(event.polygon_coordinates);
       if (polygonCoords.length >= 3) {
@@ -248,67 +303,47 @@ export default function LiveGeofenceMap({
         mapInstanceRef.current.fitBounds(bounds.pad(0.3));
       }
     }
-  }, [studentCoords, inRange, event]);
+  }, [studentCoords?.lat, studentCoords?.lng, inRange, event?.id]);
 
-  // 4. Update Live Admin Students List Markers on Admin Dashboard
+  // 4. Render Live Students Batch for Admin Telemetry
   useEffect(() => {
-    if (!mapInstanceRef.current || !studentMarkersGroupRef.current || !studentsList.length) return;
-
+    if (!mapInstanceRef.current || !studentMarkersGroupRef.current) return;
     studentMarkersGroupRef.current.clearLayers();
 
-    studentsList.forEach(student => {
-      if (student.lat && student.lng) {
-        const isOk = student.in_range === 1 && student.is_spoofed === 0;
-        const isSpoof = student.is_spoofed === 1;
-        const pinColor = isSpoof ? '#ef4444' : isOk ? '#10b981' : '#f59e0b';
+    if (!Array.isArray(studentsList) || studentsList.length === 0) return;
 
-        const icon = L.divIcon({
-          className: 'admin-student-pin',
-          html: `<div style="
-            width: 16px; 
-            height: 16px; 
-            background: ${pinColor}; 
-            border: 2px solid #ffffff; 
-            border-radius: 50%; 
-            box-shadow: 0 0 8px ${pinColor};
-          "></div>`,
-          iconSize: [16, 16],
-          iconAnchor: [8, 8]
-        });
+    studentsList.forEach(st => {
+      if (!st.lat || !st.lng) return;
+      const isSpoofed = st.is_spoofed === 1;
+      const isIn = st.in_range === 1;
 
-        const marker = L.marker([student.lat, student.lng], { icon });
-        marker.bindPopup(`
-          <div style="font-size: 11px;">
-            <b>${student.name}</b> (${student.student_id})<br/>
-            Action: ${student.action.toUpperCase()}<br/>
-            Status: ${isSpoof ? 'SPOOF DETECTED' : isOk ? 'Inside Polygon' : 'Outside Polygon (Grace)'}
-          </div>
-        `);
-        studentMarkersGroupRef.current.addLayer(marker);
-      }
+      const pinColor = isSpoofed ? '#f43f5e' : isIn ? '#10b981' : '#f59e0b';
+
+      const icon = L.divIcon({
+        className: 'admin-student-pin',
+        html: `<div style="
+          width: 14px;
+          height: 14px;
+          background: ${pinColor};
+          border: 1.5px solid #ffffff;
+          border-radius: 50%;
+          box-shadow: 0 0 8px ${pinColor};
+        "></div>`,
+        iconSize: [14, 14],
+        iconAnchor: [7, 7]
+      });
+
+      L.marker([st.lat, st.lng], { icon })
+        .addTo(studentMarkersGroupRef.current)
+        .bindPopup(`<b>${st.name || st.student_id}</b><br/>Status: ${st.status}<br/>Trust Score: ${st.trust_score || 100}/100`);
     });
   }, [studentsList]);
 
-  const polygonVerticesCount = normalizePolygon(event?.polygon_coordinates).length;
-
   return (
-    <div className="relative w-full overflow-hidden rounded-xl border border-slate-800 shadow-lg">
-      
-      {/* Map Legend Overlay */}
-      <div className="absolute top-2 right-2 z-20 glass-panel px-3 py-1.5 rounded-lg border border-slate-700/80 text-[10px] text-slate-300 space-y-1 backdrop-blur-md">
-        <div className="flex items-center gap-1.5 font-semibold">
-          <span className="w-2.5 h-2.5 rounded-sm bg-indigo-500 border border-white"></span>
-          <span>Venue Boundary ({polygonVerticesCount > 0 ? `${polygonVerticesCount} Vertices` : 'Custom Polygon'})</span>
-        </div>
-        {studentCoords && (
-          <div className="flex items-center gap-1.5">
-            <span className={`w-2.5 h-2.5 rounded-full border border-white ${inRange ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
-            <span>Your Position ({inRange ? 'Inside Polygon' : 'Outside Boundary'})</span>
-          </div>
-        )}
-      </div>
-
-      <div ref={mapContainerRef} style={{ height }} className="w-full z-10" />
-    </div>
+    <div
+      ref={mapContainerRef}
+      style={{ height, width: '100%' }}
+      className="rounded-xl overflow-hidden border border-slate-800 relative z-0 shadow-inner"
+    />
   );
 }
