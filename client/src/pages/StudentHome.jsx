@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import LiveGeofenceMap from '../components/LiveGeofenceMap';
+import { QRCodeSVG } from 'qrcode.react';
 import {
   MapPin,
   Clock,
@@ -27,6 +28,9 @@ import {
   Fingerprint,
   Mail,
   AlertCircle,
+  Copy,
+  Check,
+  FileCode,
   X
 } from 'lucide-react';
 
@@ -579,7 +583,9 @@ export default function StudentHome({ onOpenPwaNotice }) {
     }
   };
 
-  // Download Student Credential Pass
+  const [copiedToken, setCopiedToken] = useState(false);
+
+  // Download Student Credential Pass JSON
   const handleDownloadPass = () => {
     if (!credentialPass) return;
     const blob = new Blob([JSON.stringify(credentialPass, null, 2)], { type: 'application/json' });
@@ -589,6 +595,45 @@ export default function StudentHome({ onOpenPwaNotice }) {
     a.download = `tapin_pass_${studentId.trim()}.json`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  // Download Student Credential Pass as QR PNG Image
+  const handleDownloadQrImage = () => {
+    const svg = document.getElementById('tapin-qr-svg');
+    if (!svg) return;
+    const svgData = new XMLSerializer().serializeToString(svg);
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+    img.onload = () => {
+      canvas.width = 320;
+      canvas.height = 360;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, 320, 360);
+      ctx.drawImage(img, 20, 20, 280, 280);
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 12px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(`TAPIN PASS: ${studentId.trim()}`, 160, 325);
+      ctx.fillStyle = '#64748b';
+      ctx.font = '10px sans-serif';
+      ctx.fillText(studentInfo?.name || 'MMSU Verified Student', 160, 345);
+
+      const pngUrl = canvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.href = pngUrl;
+      a.download = `tapin_qr_badge_${studentId.trim()}.png`;
+      a.click();
+    };
+    img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
+  };
+
+  // Copy Raw Cryptographic Token
+  const handleCopyToken = () => {
+    if (!credentialPass) return;
+    navigator.clipboard.writeText(JSON.stringify(credentialPass));
+    setCopiedToken(true);
+    setTimeout(() => setCopiedToken(false), 3000);
   };
 
   // Submit Time In / Time Out Attendance
@@ -1478,27 +1523,67 @@ export default function StudentHome({ onOpenPwaNotice }) {
               <p className="text-xs text-slate-400">{studentInfo?.name} • {studentId}</p>
             </div>
 
-            {/* Visual Pass Representation */}
-            <div className="p-4 bg-white rounded-xl shadow-inner mx-auto w-48 h-48 flex flex-col items-center justify-center">
-              <div className="w-40 h-40 border-4 border-slate-900 p-2 flex flex-col items-center justify-center text-slate-900 text-center">
-                <Key className="w-10 h-10 text-indigo-600 mb-1" />
-                <span className="text-[10px] font-mono font-bold break-all">ED25519-SIGNED</span>
-                <span className="text-[9px] font-mono text-slate-600 mt-1">{studentId}</span>
-                <span className="text-[8px] font-mono text-slate-400">{credentialPass.payload?.issued_at?.slice(0, 10)}</span>
+            {/* Live Scannable High-Resolution QR Code */}
+            <div className="p-4 bg-white rounded-2xl shadow-xl mx-auto w-56 flex flex-col items-center justify-center border-2 border-indigo-500/40">
+              <QRCodeSVG
+                id="tapin-qr-svg"
+                value={JSON.stringify(credentialPass)}
+                size={180}
+                level="M"
+                includeMargin={true}
+              />
+              <div className="mt-2 text-[10px] font-mono font-bold text-slate-900 tracking-wider">
+                ED25519 VERIFIED PASS
+              </div>
+              <div className="text-[9px] font-mono text-slate-500">
+                {studentId}
               </div>
             </div>
 
             <p className="text-[11px] text-slate-400">
-              This signed credential pass can be scanned at checkpoints or presented on any terminal.
+              Present this QR code on-screen to an event organizer or checkpoint kiosk scanner. It is signed with your private key and verified against your server public key.
             </p>
 
-            <button
-              onClick={handleDownloadPass}
-              className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <Download className="w-4 h-4" />
-              <span>Download Pass JSON File</span>
-            </button>
+            {/* Action Buttons */}
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={handleDownloadQrImage}
+                className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-indigo-600/30 transition-all"
+              >
+                <QrCode className="w-4 h-4" />
+                <span>Save QR Code Badge (PNG Image)</span>
+              </button>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={handleDownloadPass}
+                  className="py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 font-semibold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <FileCode className="w-3.5 h-3.5" />
+                  <span>Pass JSON</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCopyToken}
+                  className="py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 font-semibold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  {copiedToken ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="text-emerald-400">Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Copy Token</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
