@@ -1,20 +1,22 @@
 # TapIn: Geofence-Based Attendance Monitoring System with Real-Time Analytics
 
-**TapIn** is a geofencing-based, real-time university attendance monitoring and analytics system featuring a standalone **GPS Spoofing-Detection Research Module** with dual swappable classification strategies, an automated evaluation harness, **Ed25519 Asymmetric Cryptographic Authentication**, and a **Multi-Checkpoint Task Verification System**.
+**TapIn** is a geofencing-based, real-time university attendance monitoring and analytics system featuring a standalone **GPS Spoofing-Detection Research Module** with dual swappable classification strategies, **WebAuthn Primary Platform Biometrics**, **Email One-Time-Passcode (OTP) Fallback**, exact **Ray-Casting Point-in-Polygon (PIP)** venue containment, and a **Multi-Checkpoint Task Verification System**.
 
 ---
 
 ## 🌟 Key System Features
 
 ### 1. Student Flow (Public Homepage `/`)
-- **Ed25519 Signed Credential Authentication**: Replaces fragile device biometrics with mathematically verifiable asymmetric signatures. Students enroll once to receive a portable TapIn Pass (JSON file & signed QR code).
+- **WebAuthn Platform Biometrics (Primary)**: W3C standard platform authenticator gating (`navigator.credentials.create()` and `navigator.credentials.get()`) utilizing Touch ID, Face ID, Windows Hello, and Android Biometrics with server-side FIDO2 verification.
+- **Email One-Time-Passcode (OTP) Fallback**: Secondary authentication path pulling the student's non-editable official university email on file with 5-minute single-use expiry, request rate limiting (max 3 per 10 mins), and brute-force protection (max 5 attempts).
+- **Portable Ed25519 Signed Passes**: Backwards-compatible asymmetric digital signature tokens and QR passes for kiosk presentation.
 - **Ray-Casting Point-in-Polygon Geofencing**: Computes exact venue containment against irregular campus venue polygons via Jordan Curve parity ray testing.
 - **Multi-Tier Haversine Pre-Filtering**: Fast $O(1)$ Haversine bounding sphere and AABB filtering optimize coordinate checks before ray-casting.
 - **Auto-Action Detection**: Intelligently determines whether `TIME_IN` or `TIME_OUT` applies.
 - **Grace Period Countdown**: Real-time 15-minute countdown for students who step outside the venue polygon perimeter.
 
 ### 2. Multi-Checkpoint Task Verification System
-- **Nested Checkpoint Engine**: Admins can place up to 3 checkpoints ($15\text{m} - 30\text{m}$ radius) nested inside the main event polygon.
+- **Interactive Click-to-Place Checkpoint Canvas**: Admins click anywhere inside the venue polygon on the map to drop station pins (`C1`, `C2`, `C3`, up to 3 max), drag them live to reposition, and click nodes to configure their task pools.
 - **Anti-Collusion Task Distribution**: Assigns tasks from checkpoint pools while filtering tasks recently assigned to other students within a collision window (default 10 mins).
 - **Admin Toggles**: "Allow Duplicate Tasks", "Randomize Tasks", and adjustable collision windows.
 - **Photo Verification Analytics**:
@@ -28,7 +30,7 @@
   - *Accuracy Anomaly*: Detects static accuracy repetition or unrealistically exact values ($\le 0.2\text{m}$).
   - *Timestamp Irregularity*: Flags out-of-order timestamps and synthetic cadences.
   - *Sensor Motion Mismatch*: Flags physical movement when physical accelerometer sensors detect zero linear acceleration.
-  - *Stationary Anomaly Signal*: Flags coordinates showing near-zero displacement over an active 5+ minute window during an event.
+  - *Stationary Anomaly Signal*: Flags coordinates showing near-zero displacement over an active 5+ minute window during an ongoing event.
 - **Swappable Strategies**:
   - **Rule-Based Weighted Scoring Strategy**: Computes trust score ($0 - 100$) and triggers heuristic flags.
   - **Machine Learning Strategy**: Logistic Regression classifier derived from extracted feature vectors.
@@ -41,7 +43,7 @@
 
 ### 5. Historical Logs & Multi-Format Export
 - Filter logs by Event, College, Course, Year Level, and Status (`Valid`, `Borderline`, `Rejected`).
-- View Ed25519 signature audit status and export to **CSV**, **Excel (.xlsx)**, and **PDF Reports**.
+- View WebAuthn / OTP auth verification status and export to **CSV**, **Excel (.xlsx)**, and **PDF Reports**.
 
 ---
 
@@ -57,8 +59,8 @@ npm run seed
 
 # Run Test Suites
 npm test               # Run 15-test Ray-Casting PIP Geofence suite
-npm run test:features  # Run 10-test Cryptographic Auth & Checkpoint suite
-npm run test:all       # Run all backend test suites
+npm run test:features  # Run 13-test WebAuthn, OTP & Checkpoint suite
+npm run test:all       # Run all 28 automated backend test suites
 
 # Run Research Evaluation Harnesses
 npm run generate-dataset  # Generate benchmark trace dataset
@@ -87,6 +89,8 @@ TapIn/
 │   ├── middleware/
 │   │   └── auth.js                # JWT & role verification middleware
 │   ├── services/
+│   │   ├── webauthnService.js     # WebAuthn FIDO2 platform biometrics (Face ID/Touch ID)
+│   │   ├── otpService.js          # Email OTP fallback with rate limiting & hashing
 │   │   ├── cryptoAuth.js          # Ed25519 cryptographic credential signing & verification
 │   │   ├── geofence.js            # Ray-Casting PIP algorithm & Haversine pre-filter
 │   │   ├── haversine.js           # Great-circle spherical distance calculations
@@ -98,44 +102,37 @@ TapIn/
 │   │       ├── index.js           # Spoof detector facade
 │   │       ├── heuristics.js      # Speed, accuracy, timestamp, motion, stationary checks
 │   │       ├── ruleBasedStrategy.js # Weighted scoring strategy
-│   │       └── mlStrategy.js      # Logistic regression strategy
+│   │       ├── mlStrategy.js      # Logistic regression strategy
+│   │       └── featureExtractor.js # Multi-sensor feature pipeline
 │   ├── routes/
-│   │   ├── auth.js                # Login & admin account management
-│   │   ├── students.js            # Student lookup, key enrollment & CSV import
-│   │   ├── events.js              # Event & polygon geofence CRUD
-│   │   ├── attendance.js          # Student submission & PIP verification
-│   │   ├── checkpoints.js         # Checkpoint management & task verification
-│   │   ├── penalties.js           # Violation evaluation endpoints
-│   │   └── spoof.js              # Research module lab endpoints
+│   │   ├── auth.js                # Admin auth, WebAuthn & Email OTP endpoints
+│   │   ├── students.js            # Student roster, public keys & CSV/XLSX import
+│   │   ├── events.js              # Event CRUD, polygon persistence & windows
+│   │   ├── checkpoints.js         # Checkpoint placement, tasks & photo uploads
+│   │   ├── attendance.js          # Time in/out submission & telemetry audit
+│   │   ├── penalties.js           # Violation recording & penalty evaluation
+│   │   └── spoof.js               # Spoof detection evaluation & configuration
 │   └── scripts/
-│       ├── testGeofence.js        # Ray-Casting PIP 15-test unit suite
-│       ├── testNewFeatures.js     # Crypto auth & checkpoint 10-test suite
-│       ├── evalSpoofDetector.js   # Research evaluation harness CLI tool
-│       └── generateSampleDataset.js # Labeled dataset generator
+│       ├── testGeofence.js        # Automated PIP test suite (15 tests)
+│       ├── testNewFeatures.js     # Automated WebAuthn, OTP & Checkpoint suite (13 tests)
+│       ├── generateSampleDataset.js # Benchmark trace generator
+│       └── evalSpoofDetector.js   # Research evaluation harness
 └── client/
-    ├── public/
-    │   ├── manifest.json          # PWA Manifest
-    │   └── sw.js                  # Service Worker for offline shell & notifications
+    ├── package.json               # Client dependencies
+    ├── vite.config.js             # Vite configuration
     └── src/
-        ├── index.css              # Glassmorphism & dark theme styles
-        ├── App.jsx                # Main application container
+        ├── App.jsx                # Router & navigation layout
         ├── components/
-        │   ├── GeofenceMapPicker.jsx # Interactive Polygon Drawing & Vertex Editor
-        │   ├── LiveGeofenceMap.jsx   # Live campus map with polygon & checkpoint overlay
-        │   └── Navbar.jsx            # Responsive navigation
+        │   ├── LiveGeofenceMap.jsx     # Leaflet live telemetry map
+        │   ├── GeofenceMapPicker.jsx   # Interactive polygon perimeter editor
+        │   ├── CheckpointMapPicker.jsx # Interactive click-to-place checkpoint canvas
+        │   └── Navbar.jsx              # Navigation header & PWA status
         └── pages/
-            ├── StudentHome.jsx    # Student landing, Ed25519 pass HUD & checkpoint missions
-            ├── AdminLogin.jsx     # Admin authentication modal
-            ├── AdminDashboard.jsx # Real-time Socket.io live dashboard
-            ├── EventManagement.jsx# Event, Checkpoint, and Task Pool manager
-            ├── AttendanceLogs.jsx # Historical logs & export center with signature audit
-            ├── PenaltyEngineView.jsx# Penalty evaluation & config
-            ├── SpoofResearchLab.jsx# Interactive research lab UI & stationary anomaly tuner
-            └── SuperadminAdmins.jsx# Admin account management
+            ├── StudentHome.jsx         # Student telemetry, WebAuthn & check-in HUD
+            ├── AdminDashboard.jsx      # Admin live attendance monitor
+            ├── EventManagement.jsx     # Event polygon & checkpoint manager
+            ├── AttendanceLogs.jsx      # Historical audit logs & multi-format export
+            ├── SpoofResearchLab.jsx    # Research lab & threshold configurator
+            ├── StudentList.jsx         # Master student roster & credential enrollment
+            └── SystemConfig.jsx        # Penalty matrix & university settings
 ```
-
----
-
-## 📄 NOTE:
-Designed as a research prototype for university event attendance, cryptographic credential verification, and location telemetry integrity.
-Built by ur boi Ishi :3
