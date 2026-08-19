@@ -683,35 +683,6 @@ export default function StudentHome({ onOpenPwaNotice }) {
     setSubmissionError(null);
     setSubmissionResult(null);
 
-    let authToken = null;
-    let authMethodToUse = authMode;
-
-    // Step A: Perform Authentication Challenge
-    if (authMode === 'webauthn') {
-      if (hasWebAuthn) {
-        try {
-          authToken = await performBiometricCheckin();
-        } catch (err) {
-          setSubmitting(false);
-          setSubmissionError('Biometric verification cancelled or failed: ' + err.message + '. You can switch to Email OTP verification.');
-          return;
-        }
-      } else {
-        authMethodToUse = 'signed_credential';
-      }
-    } else if (authMode === 'email_otp') {
-      if (verifiedOtpToken) {
-        authToken = verifiedOtpToken;
-      } else {
-        const token = await handleVerifyOtp();
-        if (!token) {
-          setSubmitting(false);
-          return;
-        }
-        authToken = token;
-      }
-    }
-
     let submitLat = coords?.lat || (activeEvent ? activeEvent.center_lat : 18.1960);
     let submitLng = coords?.lng || (activeEvent ? activeEvent.center_lng : 120.5927);
     let submitAcc = accuracy || 5;
@@ -736,8 +707,7 @@ export default function StudentHome({ onOpenPwaNotice }) {
         accuracy: submitAcc,
         timestamp: new Date().toISOString(),
         motionData: submitMotion,
-        auth_method: authMethodToUse,
-        auth_token: authToken,
+        auth_method: 'student_id',
         forceAction: forcedAction !== 'auto' ? forcedAction : undefined,
         signature: credentialPass?.signature
       });
@@ -746,11 +716,6 @@ export default function StudentHome({ onOpenPwaNotice }) {
       if (activeEvent) {
         fetchStudentAttendanceStatus(activeEvent.id, studentId.trim());
         fetchStudentCheckpointStatus(activeEvent.id, studentId.trim());
-      }
-      if (authMode === 'email_otp') {
-        setVerifiedOtpToken(null);
-        setOtpSent(false);
-        setOtpInput('');
       }
     } catch (err) {
       if (err.response?.data) {
@@ -1044,7 +1009,7 @@ export default function StudentHome({ onOpenPwaNotice }) {
         )}
       </div>
 
-      {/* Step 2: Primary WebAuthn Biometrics & Email OTP Fallback Authentication */}
+      {/* Step 2: Student Identity & Verification */}
       <div className="glass-card rounded-2xl p-4 sm:p-6 space-y-4 border border-slate-800">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-3">
@@ -1052,60 +1017,24 @@ export default function StudentHome({ onOpenPwaNotice }) {
               <Key className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-white">2. Biometric & Identity Verification</h2>
-              <p className="text-xs text-slate-400">WebAuthn Platform Biometrics (Primary) or University Email OTP (Fallback).</p>
+              <h2 className="text-base font-bold text-white">2. Student Identity & Pass</h2>
+              <p className="text-xs text-slate-400">Verified against MMSU Master Student Database.</p>
             </div>
           </div>
 
           <div className="flex items-center gap-1.5">
-            {authMode === 'webauthn' ? (
-              hasWebAuthn ? (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  Biometrics Enrolled
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                  <AlertTriangle className="w-3.5 h-3.5" />
-                  Enrollment Needed
-                </span>
-              )
+            {studentInfo ? (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                Verified Student
+              </span>
             ) : (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
-                <Mail className="w-3.5 h-3.5" />
-                Email OTP Mode
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                <AlertTriangle className="w-3.5 h-3.5" />
+                Enter Student ID
               </span>
             )}
           </div>
-        </div>
-
-        {/* Auth Method Tabs */}
-        <div className="flex items-center gap-2 p-1 rounded-xl bg-slate-900/90 border border-slate-800">
-          <button
-            type="button"
-            onClick={() => setAuthMode('webauthn')}
-            className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-              authMode === 'webauthn'
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Fingerprint className="w-4 h-4" />
-            <span>WebAuthn Biometrics (Primary)</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setAuthMode('email_otp')}
-            className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-              authMode === 'email_otp'
-                ? 'bg-cyan-600 text-white shadow-md shadow-cyan-600/30'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Mail className="w-4 h-4" />
-            <span>Email OTP (Fallback)</span>
-          </button>
         </div>
 
         <div className="space-y-3">
@@ -1135,140 +1064,7 @@ export default function StudentHome({ onOpenPwaNotice }) {
               </div>
               <p className="text-slate-400">{studentInfo.course} • {studentInfo.college}</p>
 
-              {/* Mode A: WebAuthn Platform Biometrics Card */}
-              {authMode === 'webauthn' && (
-                <div className="pt-3 border-t border-slate-800 space-y-2.5">
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <div className="flex items-center gap-2">
-                      <Fingerprint className={`w-5 h-5 ${hasWebAuthn ? 'text-emerald-400' : 'text-amber-400'}`} />
-                      <div>
-                        <strong className="text-white block text-xs">
-                          {hasWebAuthn ? 'Native Device Biometrics Enrolled' : 'Platform Biometrics Not Yet Enrolled'}
-                        </strong>
-                        <span className="text-[11px] text-slate-400">
-                          {hasWebAuthn ? 'Touch ID / Face ID / Windows Hello is active' : 'Click below to bind this device with Face ID / Fingerprint'}
-                        </span>
-                      </div>
-                    </div>
-
-                    {!hasWebAuthn ? (
-                      <button
-                        type="button"
-                        onClick={handleEnrollWebAuthn}
-                        disabled={isEnrollingWebAuthn}
-                        className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-indigo-600/30 transition-all cursor-pointer"
-                      >
-                        <ShieldCheck className="w-3.5 h-3.5" />
-                        <span>{isEnrollingWebAuthn ? 'Scanning Sensor...' : 'Register Device Biometrics'}</span>
-                      </button>
-                    ) : (
-                      <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold text-[11px]">
-                        Ready to Time In/Out ✅
-                      </span>
-                    )}
-                  </div>
-
-                  {webAuthnSuccess && (
-                    <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs flex items-center gap-1.5">
-                      <CheckCircle className="w-4 h-4 shrink-0" />
-                      <span>{webAuthnSuccess}</span>
-                    </div>
-                  )}
-
-                  {webAuthnError && (
-                    <div className="p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5">
-                        <AlertCircle className="w-4 h-4 shrink-0" />
-                        <span>{webAuthnError}</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setAuthMode('email_otp')}
-                        className="text-cyan-400 underline font-bold cursor-pointer"
-                      >
-                        Use Email OTP
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Mode B: Email One-Time-Passcode (OTP) Fallback Card */}
-              {authMode === 'email_otp' && (
-                <div className="pt-3 border-t border-slate-800 space-y-3">
-                  <div className="p-3 rounded-xl bg-cyan-950/30 border border-cyan-500/20 space-y-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="space-y-0.5">
-                        <span className="text-[10px] uppercase font-bold text-cyan-400 block">Registered University Email</span>
-                        <strong className="text-white text-xs font-mono">
-                          {maskedEmail || studentInfo.email || `${studentInfo.student_id.toLowerCase()}@mmsu.edu.ph`}
-                        </strong>
-                        <p className="text-[10px] text-slate-400">Non-editable • Pulled from verified university student roster.</p>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={handleRequestOtp}
-                        disabled={otpSending || otpCooldown > 0}
-                        className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
-                      >
-                        <Mail className="w-3.5 h-3.5" />
-                        <span>{otpSending ? 'Sending...' : otpCooldown > 0 ? `Resend in ${otpCooldown}s` : (otpSent ? 'Resend Code' : 'Send 6-Digit OTP')}</span>
-                      </button>
-                    </div>
-
-                    {otpDevCode && (
-                      <div className="p-2 rounded bg-slate-900 border border-cyan-500/30 text-[11px] text-cyan-300 font-mono flex items-center justify-between">
-                        <span>🧪 Local Demo Verification Code:</span>
-                        <strong className="text-white font-bold text-sm tracking-widest">{otpDevCode}</strong>
-                      </div>
-                    )}
-                  </div>
-
-                  {otpSent && (
-                    <div className="space-y-2">
-                      <label className="text-[11px] font-bold text-slate-300 block">
-                        Enter 6-Digit Email Verification Code
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={otpInput}
-                          onChange={(e) => setOtpInput(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
-                          placeholder="••••••"
-                          maxLength={6}
-                          className="w-40 px-3 py-2 rounded-xl bg-slate-950 border border-cyan-500/40 text-center font-mono text-lg tracking-widest text-white focus:outline-none focus:border-cyan-400"
-                        />
-
-                        <button
-                          type="button"
-                          onClick={handleVerifyOtp}
-                          className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-md shadow-cyan-600/20"
-                        >
-                          <CheckCircle className="w-3.5 h-3.5" />
-                          <span>Verify Code</span>
-                        </button>
-                      </div>
-
-                      {verifiedOtpToken && (
-                        <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs flex items-center gap-1.5">
-                          <CheckCircle className="w-4 h-4 shrink-0" />
-                          <span>Email OTP verified successfully! You can now submit your Time In / Time Out below.</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {otpError && (
-                    <div className="p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-center gap-1.5">
-                      <AlertCircle className="w-4 h-4 shrink-0" />
-                      <span>{otpError}</span>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* QR Pass Download & Presentation (Backwards-compatibility) */}
+              {/* QR Pass Download & Presentation */}
               <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
                 <span>Portable Credential Pass:</span>
                 <div className="flex items-center gap-2">
@@ -1294,6 +1090,7 @@ export default function StudentHome({ onOpenPwaNotice }) {
             </div>
           )}
         </div>
+      </div>
 
       {/* Step 3: Checkpoint Mission & Task Verification HUD (Gated Behind Time-In) */}
       {activeEvent && (activeEvent.checkpoints || []).length > 0 && (
@@ -1656,15 +1453,13 @@ export default function StudentHome({ onOpenPwaNotice }) {
                 className={`w-full py-4 px-6 rounded-2xl font-bold text-sm text-white shadow-xl flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${
                   isTimeOutLocked
                     ? 'bg-slate-800 border border-slate-700 text-slate-400'
-                    : authMode === 'email_otp'
-                    ? 'bg-gradient-to-r from-cyan-600 via-teal-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 shadow-cyan-600/25'
                     : 'bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 shadow-indigo-600/25'
                 }`}
               >
                 {submitting ? (
                   <span className="flex items-center gap-2">
                     <RefreshCw className="w-4 h-4 animate-spin" />
-                    {authMode === 'webauthn' && hasWebAuthn ? 'Awaiting Biometric Sensor Scan...' : 'Verifying Identity & Telemetry...'}
+                    Verifying Telemetry & Recording Attendance...
                   </span>
                 ) : isTimeOutLocked ? (
                   <>
@@ -1673,17 +1468,13 @@ export default function StudentHome({ onOpenPwaNotice }) {
                   </>
                 ) : (
                   <>
-                    {authMode === 'email_otp' ? (
-                      <Mail className="w-5 h-5 fill-white text-white" />
-                    ) : (
-                      <Fingerprint className="w-5 h-5 text-white" />
-                    )}
+                    <UserCheck className="w-5 h-5 text-white" />
                     <span>
                       {forcedAction === 'time_in' || (forcedAction === 'auto' && !attendanceStatus?.hasTimedIn)
-                        ? (authMode === 'email_otp' ? 'Verify Email OTP & Record TIME IN' : (hasWebAuthn ? 'Scan Biometrics & Record TIME IN' : 'Submit TIME IN (Biometrics Recommended)'))
+                        ? '📥 Record TIME IN'
                         : forcedAction === 'time_out' || (forcedAction === 'auto' && attendanceStatus?.hasTimedIn && !attendanceStatus?.hasTimedOut)
-                        ? (authMode === 'email_otp' ? 'Verify Email OTP & Record TIME OUT' : (hasWebAuthn ? 'Scan Biometrics & Record TIME OUT' : 'Submit TIME OUT (Biometrics Recommended)'))
-                        : (authMode === 'email_otp' ? 'Update Attendance Record (Email OTP)' : (hasWebAuthn ? 'Scan Biometrics & Update Attendance' : 'Update Attendance Record'))}
+                        ? '📤 Record TIME OUT'
+                        : '🔄 Update Attendance Record'}
                     </span>
                   </>
                 )}
@@ -1811,7 +1602,6 @@ export default function StudentHome({ onOpenPwaNotice }) {
         </div>
       )}
 
-      </div>
     </div>
   );
 }

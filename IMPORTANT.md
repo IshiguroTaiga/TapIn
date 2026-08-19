@@ -94,29 +94,15 @@ To evaluate coordinate point $P = (lat_p, lng_p)$:
 
 ---
 
-## 3. Authentication Architecture: WebAuthn Platform Biometrics & Email OTP Fallback
+## 3. Authentication & Student Identity Verification Architecture
 
-### Primary: WebAuthn Native Platform Biometrics
-- **Browser-Native Standard**: Leverages the W3C WebAuthn API (`navigator.credentials.create()` and `navigator.credentials.get()`) backed by `@simplewebauthn/server` and `@simplewebauthn/browser`.
-- **Platform Enclave Gating**: Configured with `authenticatorAttachment: 'platform'` and `userVerification: 'required'`, tapping directly into **Touch ID, Face ID, Windows Hello, and Android Fingerprint hardware security modules**.
-- **Server-Side FIDO2 Flow**:
-  1. Student requests enrollment challenge (`POST /api/auth/webauthn/register-options`).
-  2. Browser prompts biometric scan, creating a hardware key pair.
-  3. Server validates attestation (`POST /api/auth/webauthn/register-verify`), saving the public key, credential ID, and signature counter to `webauthn_credentials`.
-  4. On attendance check-in, the student is challenged (`POST /api/auth/webauthn/login-options` $\to$ `navigator.credentials.get()`), and the server verifies signature validity before granting `TIME_IN` or `TIME_OUT`.
-
-### Fallback: University Email OTP with Abuse Protection
-- **Automatic Fallback**: Shown when WebAuthn is unavailable (unsupported browser, device without biometric hardware, or kiosk usage).
-- **Strict Institutional Email Record**: Destination email is pulled exclusively from the student's verified institutional record (`students.email`, defaulting to `<student_id>@mmsu.edu.ph`) — **non-editable at check-in time**.
-- **Abuse & Rate-Limiting Protection**:
-  - **Salted SHA-256 Hashing**: 6-digit numeric OTP is stored hashed in SQLite `otp_codes`.
-  - **Expiry**: Strict **5-minute time window**.
-  - **Single-Use**: Invalidation immediately upon successful attendance recording.
-  - **Rate Limiting**: Maximum **3 OTP requests per 10-minute sliding window** per student ID (`HTTP 429`).
-  - **Brute-Force Lockout**: Maximum **5 failed verification attempts** per issued code before immediate invalidation.
-
-### Backwards-Compatibility: Portable Ed25519 Signed QR Passes
-- For offline checkpoint scans or paper pass presentations, students can generate an asymmetric **Ed25519 key pair** and download/print their **Personal TapIn Credential Pass** containing a verifiable digital signature.
+### Direct Institutional ID Verification (1-Tap Frictionless Check-in)
+- **Master Student Roster Matching**: When a student enters their Student ID (e.g., `23-140015`), the system instantly verifies their enrollment record against the university master database, resolving full name, department, college, year, and section.
+- **Elimination of Biometric Bottlenecks**: Mobile biometric hardware sensors (fingerprint/Face ID) frequently fail due to browser permissions, dirty sensors, or device inconsistencies in large event queues. TapIn streamlines check-ins to **1-Tap Instant Logging**, shifting anti-proxy security to **exact polygon geofencing**, **multi-sensor anti-spoof AI**, and **physical checkpoint missions**.
+- **Portable Cryptographic Passes (Ed25519)**:
+  - Students can generate and store a cryptographic digital signature pass.
+  - Portable QR code badges and JSON tokens can be downloaded or presented for visual/scanner verification at entry gates.
+- **Backend Modular Support**: WebAuthn and Email OTP modules remain available as optional backend security microservices in `server/services/`.
 
 ---
 

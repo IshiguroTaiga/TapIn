@@ -23,86 +23,55 @@ router.post('/submit', (req, res) => {
     });
   }
 
-  // 2. Multi-Mode Authentication Verification (WebAuthn Biometrics, Email OTP Fallback, or Ed25519)
+  // 2. Multi-Mode Authentication Verification (Optional Biometrics / OTP / Signatures)
   const { auth_method, auth_token, webauthn_response, otp_code } = req.body;
   let signatureValid = 1;
   let signatureChecked = false;
   let signatureError = null;
-  let resolvedAuthMethod = auth_method || 'webauthn';
+  let resolvedAuthMethod = auth_method || 'student_id';
 
-  const webauthnCreds = db.prepare(`SELECT * FROM webauthn_credentials WHERE student_id = ?`).all(student.student_id);
-
-  if (resolvedAuthMethod === 'webauthn') {
-    if (webauthnCreds.length > 0) {
-      signatureChecked = true;
-      if (auth_token) {
-        try {
-          const { JWT_SECRET } = require('../middleware/auth');
-          const jwt = require('jsonwebtoken');
-          const decoded = jwt.verify(auth_token, JWT_SECRET);
-          if (decoded.student_id !== student.student_id) {
-            signatureValid = 0;
-            signatureError = 'WebAuthn biometric token student mismatch.';
-          }
-        } catch (err) {
-          signatureValid = 0;
-          signatureError = 'WebAuthn biometric session expired or invalid. Please scan Face ID / Fingerprint again.';
-        }
-      } else if (webauthn_response) {
-        try {
-          const { verifyWebAuthnAuthentication } = require('../services/webauthnService');
-          const result = verifyWebAuthnAuthentication(student.student_id, webauthn_response, req);
-          if (!result.verified) {
-            signatureValid = 0;
-            signatureError = 'WebAuthn platform biometric verification failed.';
-          }
-        } catch (err) {
-          signatureValid = 0;
-          signatureError = err.message;
-        }
+  if (auth_token && resolvedAuthMethod === 'webauthn') {
+    try {
+      const { JWT_SECRET } = require('../middleware/auth');
+      const jwt = require('jsonwebtoken');
+      const decoded = jwt.verify(auth_token, JWT_SECRET);
+      if (decoded.student_id === student.student_id) {
+        signatureChecked = true;
+        signatureValid = 1;
       }
+    } catch (err) {
+      // Non-blocking fallback to student_id
+      resolvedAuthMethod = 'student_id';
     }
-  } else if (resolvedAuthMethod === 'email_otp') {
+  } else if (auth_token && resolvedAuthMethod === 'email_otp') {
+    try {
+      const { JWT_SECRET } = require('../middleware/auth');
+      const jwt = require('jsonwebtoken');
+      const decoded = jwt.verify(auth_token, JWT_SECRET);
+      if (decoded.student_id === student.student_id) {
+        signatureChecked = true;
+        signatureValid = 1;
+      }
+    } catch (err) {
+      resolvedAuthMethod = 'student_id';
+    }
+  } else if (signature && student.public_key) {
+    const payloadToVerify = {
+      student_id: student.student_id,
+      event_id: req.body.event_id || 0,
+      lat: parseFloat(lat),
+      lng: parseFloat(lng)
+    };
+    const isValid = verifySignature(student.public_key, payloadToVerify, signature);
     signatureChecked = true;
-    if (auth_token) {
-      try {
-        const { JWT_SECRET } = require('../middleware/auth');
-        const jwt = require('jsonwebtoken');
-        const decoded = jwt.verify(auth_token, JWT_SECRET);
-        if (decoded.student_id !== student.student_id || decoded.auth_method !== 'email_otp') {
-          signatureValid = 0;
-          signatureError = 'Email OTP verification token mismatch.';
-        }
-      } catch (err) {
-        signatureValid = 0;
-        signatureError = 'Email OTP verification session expired. Please enter a fresh code.';
-      }
-    } else if (otp_code) {
-      const { verifyEmailOtp } = require('../services/otpService');
-      const otpRes = verifyEmailOtp(student.student_id, otp_code);
-      if (!otpRes.isValid) {
-        signatureValid = 0;
-        signatureError = otpRes.reason;
-      }
+    signatureValid = isValid ? 1 : 0;
+    if (!isValid) {
+      signatureError = 'Cryptographic Signature Verification Failed! Presented credential token signature did not match public key on file.';
     }
-  } else if (student.public_key) {
-    signatureChecked = true;
-    if (!signature) {
-      signatureValid = 0;
-      signatureError = 'Signed credential required: student public key is registered, but no digital signature was presented.';
-    } else {
-      const payloadToVerify = {
-        student_id: student.student_id,
-        event_id: req.body.event_id || 0,
-        lat: parseFloat(lat),
-        lng: parseFloat(lng)
-      };
-      const isValid = verifySignature(student.public_key, payloadToVerify, signature);
-      signatureValid = isValid ? 1 : 0;
-      if (!isValid) {
-        signatureError = 'Cryptographic Signature Verification Failed! Presented credential token signature did not match public key on file.';
-      }
-    }
+  } else {
+    // Standard direct student ID verification from master database
+    resolvedAuthMethod = 'student_id';
+    signatureValid = 1;
   }
 
   // 3. Fetch Active Event (Honoring event_id if provided by student event selector)
