@@ -11,6 +11,7 @@ import {
   Cpu,
   Users,
   AlertTriangle,
+  CheckSquare,
   Menu,
   X
 } from 'lucide-react';
@@ -23,6 +24,7 @@ export default function Navbar({ activeTab, setActiveTab, onOpenLogin, onOpenPwa
     { id: 'student', label: 'Student Flow', icon: MapPin, color: 'indigo' },
     ...(user ? [
       { id: 'dashboard', label: 'Live Feed', icon: LayoutDashboard, color: 'indigo' },
+      { id: 'task-reviews', label: 'Tasks Review', icon: CheckSquare, color: 'indigo' },
       { id: 'events', label: 'Events', icon: Calendar, color: 'indigo' },
       { id: 'history', label: 'Logs & Export', icon: FileText, color: 'indigo' },
       { id: 'penalties', label: 'Penalties', icon: AlertTriangle, color: 'indigo' },

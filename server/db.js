@@ -223,6 +223,9 @@ function initDb() {
   try { db.exec(`ALTER TABLE attendance_logs ADD COLUMN auth_method TEXT DEFAULT 'webauthn';`); } catch (e) {}
   try { db.exec(`ALTER TABLE attendance_logs ADD COLUMN signature_valid INTEGER DEFAULT 1;`); } catch (e) {}
   try { db.exec(`ALTER TABLE attendance_logs ADD COLUMN signature_payload TEXT;`); } catch (e) {}
+  try { db.exec(`ALTER TABLE student_task_assignments ADD COLUMN admin_notes TEXT;`); } catch (e) {}
+  try { db.exec(`ALTER TABLE student_task_assignments ADD COLUMN reviewed_by TEXT;`); } catch (e) {}
+  try { db.exec(`ALTER TABLE student_task_assignments ADD COLUMN reviewed_at DATETIME;`); } catch (e) {}
 
   // Populate default university emails for existing students missing an email
   try {

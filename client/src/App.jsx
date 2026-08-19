@@ -10,6 +10,7 @@ import AttendanceLogs from './pages/AttendanceLogs';
 import PenaltyEngineView from './pages/PenaltyEngineView';
 import SpoofResearchLab from './pages/SpoofResearchLab';
 import SuperadminAdmins from './pages/SuperadminAdmins';
+import TaskSubmissionsReview from './pages/TaskSubmissionsReview';
 
 function MainLayout() {
   const { user } = useAuth();
@@ -35,7 +36,11 @@ function MainLayout() {
         )}
 
         {activeTab === 'dashboard' && user && (
-          <AdminDashboard />
+          <AdminDashboard onNavigate={setActiveTab} />
+        )}
+
+        {activeTab === 'task-reviews' && user && (
+          <TaskSubmissionsReview />
         )}
 
         {activeTab === 'events' && user && (

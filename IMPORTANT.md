@@ -137,9 +137,10 @@ Classification: $P \ge 0.5 \implies \text{Spoofed}$.
 TapIn enforces a deterministic physical attendance lifecycle:
 1. **Pre-Time-In State**: Checkpoint tasks are strictly locked and hidden (`🔒 Checkpoint Tasks Locked`). Proximity task allocation is disabled until the student logs a valid Time-In.
 2. **Active Timed-In State**: Once Timed In, assigned station tasks unlock in the student HUD. Moving into a checkpoint station zone ($15\text{m} - 30\text{m}$) activates the task submission card.
-3. **Genuine Verification Requirement**: Physical proximity entry records a visit log, but **only a successful photo/text verification API response** marks a station as `Verified & Completed ✅`.
-4. **Time-Out Gating**: The Time Out button remains **locked and disabled** until $100\%$ of assigned checkpoint tasks are verified ($N/N$ stations completed).
-5. **Penalty Engine Violation**: If an event's Time Out window closes and a student has unverified checkpoint tasks, the system raises an `INCOMPLETE_CHECKPOINT_TASKS` violation with disciplinary penalty flags.
+3. **Genuine Verification Requirement**: Physical proximity entry records a visit log, but **only a successful photo/text verification API response** queues the task for review (`Pending Approval ⏳`).
+4. **Admin Approval & Completion**: Administrators inspect submissions in the dedicated **Tasks Review** dashboard (with high-res photo zoom, EXIF camera diagnostics, and dHash duplicate flags). When approved by an administrator, the station transitions to `Verified & Completed ✅`. If rejected, the student is prompted with admin feedback to re-submit.
+5. **Time-Out Gating**: The Time Out button remains **locked and disabled** until $100\%$ of assigned checkpoint tasks are approved and verified ($N/N$ stations completed).
+6. **Penalty Engine Violation**: If an event's Time Out window closes and a student has unverified checkpoint tasks, the system raises an `INCOMPLETE_CHECKPOINT_TASKS` violation with disciplinary penalty flags.
 
 ### Anti-Collusion Task Distribution Algorithm
 When a student enters a checkpoint catchment, the server assigns a task from that station's pool:
@@ -174,3 +175,6 @@ When a student enters a checkpoint catchment, the server assigns a task from tha
 
 ### Q6: How are checkpoint tasks coordinated with Time In and Time Out?
 > **Answer**: "TapIn implements an attendance state machine: checkpoint tasks remain locked until the student logs a valid Time In. Once timed in, students visit stations to complete assigned missions. Time Out is strictly gated and disabled until all checkpoint tasks are verified. If a student leaves without completing tasks, the Penalty Engine automatically flags an `INCOMPLETE_CHECKPOINT_TASKS` violation."
+
+### Q7: How does the Admin Review and Approval workflow work for checkpoint missions?
+> **Answer**: "When a student submits a photo or text task, it enters the administrator approval queue with status `submitted` (Pending Approval). Admins view all submissions in real-time in the `Tasks Review` dashboard with EXIF geolocation analysis and dHash duplicate detection. Admins can 1-click approve or reject with custom feedback. Upon approval, the station marks as `Verified & Completed`, unlocking Time Out in real-time via Socket.io."

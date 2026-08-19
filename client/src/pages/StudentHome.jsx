@@ -2,12 +2,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import LiveGeofenceMap from '../components/LiveGeofenceMap';
 import { QRCodeSVG } from 'qrcode.react';
+import io from 'socket.io-client';
 import {
   MapPin,
   Clock,
   ShieldCheck,
   ShieldAlert,
   CheckCircle,
+  XCircle,
   AlertTriangle,
   UserCheck,
   Compass,
@@ -126,6 +128,9 @@ export default function StudentHome({ onOpenPwaNotice }) {
   const [taskSubmitError, setTaskSubmitError] = useState(null);
   const [studentVisits, setStudentVisits] = useState([]);
   const [verifiedCheckpointIds, setVerifiedCheckpointIds] = useState([]);
+  const [pendingCheckpointIds, setPendingCheckpointIds] = useState([]);
+  const [rejectedCheckpointIds, setRejectedCheckpointIds] = useState([]);
+  const [studentAssignments, setStudentAssignments] = useState([]);
   const [checkingProximity, setCheckingProximity] = useState(false);
 
   // Real-Time Student Attendance State & Action Selector
@@ -284,15 +289,43 @@ export default function StudentHome({ onOpenPwaNotice }) {
       const res = await axios.get(`/api/checkpoints/student-status/${eventId}/${encodeURIComponent(sId)}`);
       setStudentVisits(res.data.visits || []);
       setVerifiedCheckpointIds(res.data.verifiedCheckpointIds || []);
+      setPendingCheckpointIds(res.data.pendingCheckpointIds || []);
+      setRejectedCheckpointIds(res.data.rejectedCheckpointIds || []);
+      setStudentAssignments(res.data.assignments || []);
     } catch (err) {}
   };
 
-  // Sync attendance and checkpoints when active event changes
+  // Sync attendance and checkpoints when active event changes & listen for real-time admin approvals
   useEffect(() => {
     if (activeEvent && studentInfo) {
       fetchStudentAttendanceStatus(activeEvent.id, studentInfo.student_id);
       fetchStudentCheckpointStatus(activeEvent.id, studentInfo.student_id);
     }
+
+    const socket = io();
+    socket.on('task_submission_approved', (data) => {
+      if (activeEvent && studentInfo && data.studentId === studentInfo.student_id) {
+        fetchStudentCheckpointStatus(activeEvent.id, studentInfo.student_id);
+        fetchStudentAttendanceStatus(activeEvent.id, studentInfo.student_id);
+      }
+    });
+
+    socket.on('task_submission_rejected', (data) => {
+      if (activeEvent && studentInfo && data.studentId === studentInfo.student_id) {
+        fetchStudentCheckpointStatus(activeEvent.id, studentInfo.student_id);
+      }
+    });
+
+    socket.on('task_submissions_bulk_approved', () => {
+      if (activeEvent && studentInfo) {
+        fetchStudentCheckpointStatus(activeEvent.id, studentInfo.student_id);
+        fetchStudentAttendanceStatus(activeEvent.id, studentInfo.student_id);
+      }
+    });
+
+    return () => {
+      socket.disconnect();
+    };
   }, [activeEvent?.id, studentInfo?.student_id]);
 
   // Evaluate Checkpoint Proximity when student coordinates update
@@ -1149,6 +1182,8 @@ export default function StudentHome({ onOpenPwaNotice }) {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
               {(activeEvent.checkpoints || []).map((cp, idx) => {
                 const isVerified = verifiedCheckpointIds.includes(cp.id);
+                const isPending = pendingCheckpointIds.includes(cp.id);
+                const isRejected = rejectedCheckpointIds.includes(cp.id);
                 const isMatched = checkpointProximity?.matchedCheckpoint?.id === cp.id;
 
                 return (
@@ -1157,8 +1192,12 @@ export default function StudentHome({ onOpenPwaNotice }) {
                     className={`p-3.5 rounded-xl border transition-all ${
                       isVerified
                         ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-300'
+                        : isPending
+                        ? 'bg-amber-950/30 border-amber-500/40 text-amber-300 shadow-lg shadow-amber-500/5'
+                        : isRejected
+                        ? 'bg-rose-950/30 border-rose-500/40 text-rose-300 shadow-lg shadow-rose-500/5'
                         : isMatched
-                        ? 'bg-cyan-950/40 border-cyan-400 shadow-lg shadow-cyan-500/20 text-cyan-200'
+                        ? 'bg-cyan-950/40 border-cyan-400 shadow-lg shadow-cyan-500/20 text-cyan-200 ring-1 ring-cyan-400/40'
                         : 'bg-slate-900/60 border-slate-800 text-slate-400'
                     }`}
                   >
@@ -1168,13 +1207,25 @@ export default function StudentHome({ onOpenPwaNotice }) {
                       </span>
                       {isVerified ? (
                         <CheckCircle className="w-4 h-4 text-emerald-400" />
+                      ) : isPending ? (
+                        <Clock className="w-4 h-4 text-amber-400 animate-pulse" />
+                      ) : isRejected ? (
+                        <XCircle className="w-4 h-4 text-rose-400" />
                       ) : isMatched ? (
                         <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
                       ) : null}
                     </div>
                     <h4 className="font-bold text-xs text-white truncate">{cp.name}</h4>
-                    <p className="text-[11px] text-slate-400 mt-1">
-                      {isVerified ? 'Verified & Completed ✅' : isMatched ? 'Inside Zone (Task Active!)' : `Radius: ${cp.radius_m || 20}m`}
+                    <p className="text-[11px] mt-1 font-medium">
+                      {isVerified
+                        ? 'Verified & Approved ✅'
+                        : isPending
+                        ? 'Pending Approval ⏳'
+                        : isRejected
+                        ? 'Rejected ❌ (Re-submit below)'
+                        : isMatched
+                        ? 'Inside Zone (Task Active!)'
+                        : `Radius: ${cp.radius_m || 20}m`}
                     </p>
                   </div>
                 );
@@ -1201,6 +1252,27 @@ export default function StudentHome({ onOpenPwaNotice }) {
                   <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800 text-xs text-slate-300">
                     <span className="font-semibold text-slate-200">Instructions: </span>
                     {activeTaskAssignment.task.instructions}
+                  </div>
+                )}
+
+                {/* Show Pending Approval or Rejection status notice if already submitted */}
+                {pendingCheckpointIds.includes(activeTaskAssignment.checkpoint?.id || activeTaskAssignment.assignment?.checkpoint_id) && (
+                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-amber-400 shrink-0 animate-pulse" />
+                    <div>
+                      <strong className="block text-white">Submission Under Admin Review</strong>
+                      <span>Your task verification was submitted and is currently in the administrator review queue. Once approved, this station will complete.</span>
+                    </div>
+                  </div>
+                )}
+
+                {rejectedCheckpointIds.includes(activeTaskAssignment.checkpoint?.id || activeTaskAssignment.assignment?.checkpoint_id) && (
+                  <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+                    <XCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                    <div>
+                      <strong className="block text-white">Previous Submission Rejected</strong>
+                      <span>The administrator rejected your previous submission. Please capture a clearer photo or enter a valid response below to re-submit.</span>
+                    </div>
                   </div>
                 )}
 
@@ -1252,12 +1324,12 @@ export default function StudentHome({ onOpenPwaNotice }) {
                   {submittingTask ? (
                     <span className="flex items-center gap-2">
                       <RefreshCw className="w-4 h-4 animate-spin" />
-                      Analyzing EXIF Geolocation & Perceptual Hash...
+                      Uploading & Analyzing Task Submission...
                     </span>
                   ) : (
                     <>
                       <UploadCloud className="w-4 h-4" />
-                      <span>Submit & Verify Checkpoint Task</span>
+                      <span>Submit Task for Admin Approval</span>
                     </>
                   )}
                 </button>
@@ -1266,12 +1338,12 @@ export default function StudentHome({ onOpenPwaNotice }) {
                 {taskSubmissionResult && (
                   <div className={`p-3.5 rounded-xl border text-xs space-y-1.5 animate-in fade-in ${
                     taskSubmissionResult.success
-                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                      ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
                       : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
                   }`}>
                     <div className="font-bold flex items-center gap-1.5">
                       {taskSubmissionResult.success ? (
-                        <CheckCircle className="w-4 h-4 text-emerald-400" />
+                        <Clock className="w-4 h-4 text-amber-400 animate-pulse" />
                       ) : (
                         <ShieldAlert className="w-4 h-4 text-rose-400" />
                       )}

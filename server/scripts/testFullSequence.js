@@ -81,8 +81,35 @@ async function runSequenceTest() {
   }
   console.log('  ✔ PASS: Time Out correctly locked while tasks remain pending');
 
-  // Step 6: Submit and Verify All Checkpoint Tasks
-  console.log('\n[Step 6] Submitting and Verifying Checkpoint Tasks:');
+  // Step 6: Student Submits Tasks -> Pending Admin Approval -> Admin Approves
+  console.log('\n[Step 6] Submitting Tasks and Testing Admin Approval Flow:');
+  for (const cp of checkpoints) {
+    const assignment = db.prepare(`
+      SELECT * FROM student_task_assignments 
+      WHERE event_id = ? AND checkpoint_id = ? AND student_id = ?
+    `).get(eventId, cp.id, studentId);
+
+    // Student submits task -> enters 'submitted' (pending approval)
+    db.prepare(`
+      UPDATE student_task_assignments SET
+        status = 'submitted',
+        photo_url = '/uploads/sample.jpg',
+        verification_score = 100,
+        completed_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(assignment.id);
+
+    console.log(`  - Student Submitted Station #${cp.checkpoint_order} ("${cp.name}") -> Status: PENDING APPROVAL`);
+  }
+
+  // Confirm Time Out remains locked while tasks are in 'submitted' state
+  const pendingCount = db.prepare(`
+    SELECT COUNT(*) as count FROM student_task_assignments
+    WHERE event_id = ? AND student_id = ? AND status = 'submitted'
+  `).get(eventId, studentId).count;
+  console.log(`  - Pending Tasks Awaiting Admin Approval: ${pendingCount}/${checkpoints.length}`);
+
+  // Admin approves all submissions
   for (const cp of checkpoints) {
     const assignment = db.prepare(`
       SELECT * FROM student_task_assignments 
@@ -92,12 +119,13 @@ async function runSequenceTest() {
     db.prepare(`
       UPDATE student_task_assignments SET
         status = 'verified',
-        verification_score = 100,
-        completed_at = CURRENT_TIMESTAMP
+        reviewed_by = 'superadmin',
+        admin_notes = 'Verified by administrator',
+        reviewed_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(assignment.id);
 
-    console.log(`  - Submitted & Verified Station #${cp.checkpoint_order} ("${cp.name}")`);
+    console.log(`  - Admin Approved Station #${cp.checkpoint_order} ("${cp.name}") -> Status: VERIFIED & COMPLETED`);
   }
 
   const verifiedAfterSubmits = db.prepare(`
@@ -109,10 +137,10 @@ async function runSequenceTest() {
   if (verifiedAfterSubmits.length !== checkpoints.length) {
     throw new Error('All checkpoints should now be verified');
   }
-  console.log('  ✔ PASS: All station tasks verified');
+  console.log('  ✔ PASS: All station tasks verified & approved by admin');
 
   // Step 7: Time Out Unlocks and Records
-  console.log('\n[Step 7] Performing Biometric TIME OUT:');
+  console.log('\n[Step 7] Performing TIME OUT:');
   const isTimeOutNowUnlocked = verifiedAfterSubmits.length >= totalCps;
   console.log(`  - Is Time Out Unlocked: ${isTimeOutNowUnlocked}`);
   if (!isTimeOutNowUnlocked) {

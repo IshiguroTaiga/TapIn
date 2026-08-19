@@ -15,14 +15,16 @@ import {
   Activity,
   ChevronLeft,
   ChevronRight,
-  Layers
+  Layers,
+  CheckSquare
 } from 'lucide-react';
 
-export default function AdminDashboard() {
+export default function AdminDashboard({ onNavigate }) {
   const [eventsList, setEventsList] = useState([]);
   const [selectedEventId, setSelectedEventId] = useState('active_latest');
   const [activeEvent, setActiveEvent] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [pendingTaskCount, setPendingTaskCount] = useState(0);
   const [summary, setSummary] = useState({
     totalActive: 0,
     inRangeCount: 0,
@@ -56,6 +58,22 @@ export default function AdminDashboard() {
 
     socket.on('events_updated', () => {
       fetchAllEvents();
+    });
+
+    socket.on('task_submission_updated', () => {
+      fetchLiveTelemetry();
+    });
+
+    socket.on('task_submission_approved', () => {
+      fetchLiveTelemetry();
+    });
+
+    socket.on('task_submission_rejected', () => {
+      fetchLiveTelemetry();
+    });
+
+    socket.on('task_submissions_bulk_approved', () => {
+      fetchLiveTelemetry();
     });
 
     // Auto-refresh polling every 5 seconds for background sync
@@ -105,6 +123,13 @@ export default function AdminDashboard() {
         setSummary(liveRes.data.summary);
         setStudents(liveRes.data.students);
         setRecentActivity(liveRes.data.recentActivity);
+
+        try {
+          const subRes = await axios.get('/api/checkpoints/submissions', {
+            params: { event_id: targetEventId, status: 'submitted' }
+          });
+          setPendingTaskCount(subRes.data.stats?.pending || (subRes.data.submissions ? subRes.data.submissions.length : 0));
+        } catch (e) {}
       }
     } catch (err) {
       console.error('Failed to fetch live admin telemetry:', err);
@@ -178,6 +203,35 @@ export default function AdminDashboard() {
           </button>
         </div>
       </div>
+
+      {/* Pending Checkpoint Tasks Notification Banner */}
+      {pendingTaskCount > 0 && (
+        <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 flex items-center justify-between gap-3 flex-wrap animate-in fade-in">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 shrink-0">
+              <CheckSquare className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <strong className="text-white block font-bold text-sm">
+                {pendingTaskCount} Checkpoint Task {pendingTaskCount === 1 ? 'Submission' : 'Submissions'} Awaiting Approval
+              </strong>
+              <span className="text-xs text-slate-300">
+                Students have submitted photos/answers for checkpoint missions. Review and approve to complete station verification.
+              </span>
+            </div>
+          </div>
+          {onNavigate && (
+            <button
+              type="button"
+              onClick={() => onNavigate('task-reviews')}
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs shadow-lg shadow-amber-500/20 cursor-pointer transition-all flex items-center gap-1.5"
+            >
+              <span>Review Submissions ({pendingTaskCount})</span>
+              <span>→</span>
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Real-time Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">

@@ -252,7 +252,7 @@ router.post('/proximity', (req, res) => {
   });
 });
 
-// 7. Student: Submit Task Verification (Photo upload with EXIF & Perceptual Hash Duplicate Detection)
+// 7. Student: Submit Task Verification (Photo or Text submission queued for Admin Approval)
 router.post('/tasks/:assignmentId/submit', upload.single('photo'), (req, res) => {
   const { assignmentId } = req.params;
   const { student_id, answer_text, signature } = req.body;
@@ -301,10 +301,10 @@ router.post('/tasks/:assignmentId/submit', upload.single('photo'), (req, res) =>
     fs.writeFileSync(filePath, req.file.buffer);
     const photoUrl = `/uploads/${filename}`;
 
-    // Update assignment record
+    // Update assignment record to 'submitted' (Pending Admin Review)
     db.prepare(`
       UPDATE student_task_assignments SET
-        status = ?,
+        status = 'submitted',
         photo_url = ?,
         photo_hash = ?,
         exif_metadata = ?,
@@ -315,7 +315,6 @@ router.post('/tasks/:assignmentId/submit', upload.single('photo'), (req, res) =>
         completed_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(
-      photoAnalysis.status,
       photoUrl,
       photoAnalysis.duplicateDetection.perceptualHashHex,
       JSON.stringify(photoAnalysis.metadata),
@@ -329,11 +328,11 @@ router.post('/tasks/:assignmentId/submit', upload.single('photo'), (req, res) =>
     const updatedAssignment = db.prepare(`SELECT * FROM student_task_assignments WHERE id = ?`).get(assignment.id);
 
     const responsePayload = {
-      success: photoAnalysis.success,
-      status: photoAnalysis.status,
-      message: photoAnalysis.success
-        ? `Task "${assignment.task_title}" successfully verified and completed!`
-        : `Task verification flagged: ${photoAnalysis.duplicateReason}`,
+      success: true,
+      status: 'submitted',
+      message: photoAnalysis.duplicateDetection.isDuplicate
+        ? `Task photo submitted (Flagged for duplicate review: ${photoAnalysis.duplicateReason}). Awaiting administrator approval.`
+        : `Task "${assignment.task_title}" photo submitted! Awaiting administrator approval.`,
       assignment: updatedAssignment,
       photoAnalysis
     };
@@ -341,16 +340,12 @@ router.post('/tasks/:assignmentId/submit', upload.single('photo'), (req, res) =>
     const reqIo = req.app.get('io');
     if (reqIo) reqIo.emit('task_submission_updated', responsePayload);
 
-    if (!photoAnalysis.success) {
-      return res.status(422).json(responsePayload);
-    }
-
     return res.json(responsePayload);
   } else {
-    // Text / Code / Quiz submission
+    // Text / Code / Quiz submission queued for admin approval
     db.prepare(`
       UPDATE student_task_assignments SET
-        status = 'verified',
+        status = 'submitted',
         submission_data = ?,
         verification_score = 100,
         completed_at = CURRENT_TIMESTAMP
@@ -358,12 +353,18 @@ router.post('/tasks/:assignmentId/submit', upload.single('photo'), (req, res) =>
     `).run(answer_text || '', assignment.id);
 
     const updated = db.prepare(`SELECT * FROM student_task_assignments WHERE id = ?`).get(assignment.id);
-    return res.json({
+    
+    const responsePayload = {
       success: true,
-      status: 'verified',
-      message: `Task "${assignment.task_title}" completed!`,
+      status: 'submitted',
+      message: `Task "${assignment.task_title}" answer submitted! Awaiting administrator approval.`,
       assignment: updated
-    });
+    };
+
+    const reqIo = req.app.get('io');
+    if (reqIo) reqIo.emit('task_submission_updated', responsePayload);
+
+    return res.json(responsePayload);
   }
 });
 
@@ -392,14 +393,28 @@ router.get('/student-status/:eventId/:studentId', (req, res) => {
 
   const totalCheckpoints = db.prepare(`SELECT COUNT(*) as count FROM event_checkpoints WHERE event_id = ?`).get(eId)?.count || 0;
 
-  // Distinct checkpoints where the student's task has status = 'verified'
+  // Distinct checkpoints where the student's task has status = 'verified' (Admin Approved)
   const verifiedRows = db.prepare(`
     SELECT DISTINCT checkpoint_id 
     FROM student_task_assignments 
     WHERE event_id = ? AND student_id = ? AND status = 'verified'
   `).all(eId, sId);
 
+  const pendingRows = db.prepare(`
+    SELECT DISTINCT checkpoint_id 
+    FROM student_task_assignments 
+    WHERE event_id = ? AND student_id = ? AND status = 'submitted'
+  `).all(eId, sId);
+
+  const rejectedRows = db.prepare(`
+    SELECT DISTINCT checkpoint_id 
+    FROM student_task_assignments 
+    WHERE event_id = ? AND student_id = ? AND status = 'rejected'
+  `).all(eId, sId);
+
   const verifiedCheckpointIds = verifiedRows.map(r => r.checkpoint_id);
+  const pendingCheckpointIds = pendingRows.map(r => r.checkpoint_id);
+  const rejectedCheckpointIds = rejectedRows.map(r => r.checkpoint_id);
   const allTasksDone = totalCheckpoints > 0 ? verifiedCheckpointIds.length >= totalCheckpoints : true;
 
   res.json({
@@ -408,9 +423,222 @@ router.get('/student-status/:eventId/:studentId', (req, res) => {
     visits,
     assignments,
     verifiedCheckpointIds,
+    pendingCheckpointIds,
+    rejectedCheckpointIds,
     completedStations: verifiedCheckpointIds.length,
     totalStations: totalCheckpoints,
     allTasksDone
+  });
+});
+
+// 9. Admin: List all student task submissions with filtering & search
+router.get('/submissions', authenticateToken, (req, res) => {
+  const { event_id, checkpoint_id, status, search } = req.query;
+
+  let query = `
+    SELECT 
+      a.*,
+      s.name as student_name,
+      s.college as student_college,
+      s.course as student_course,
+      s.year as student_year,
+      s.section as student_section,
+      s.email as student_email,
+      e.name as event_name,
+      cp.name as checkpoint_name,
+      cp.checkpoint_order,
+      t.title as task_title,
+      t.description as task_description,
+      t.task_type
+    FROM student_task_assignments a
+    JOIN students s ON a.student_id = s.student_id
+    JOIN events e ON a.event_id = e.id
+    JOIN event_checkpoints cp ON a.checkpoint_id = cp.id
+    JOIN checkpoint_tasks t ON a.task_id = t.id
+    WHERE 1=1
+  `;
+  const params = [];
+
+  if (event_id && event_id !== 'all') {
+    query += ` AND a.event_id = ?`;
+    params.push(parseInt(event_id));
+  }
+
+  if (checkpoint_id && checkpoint_id !== 'all') {
+    query += ` AND a.checkpoint_id = ?`;
+    params.push(parseInt(checkpoint_id));
+  }
+
+  if (status && status !== 'all') {
+    query += ` AND a.status = ?`;
+    params.push(status);
+  }
+
+  if (search && search.trim()) {
+    const term = `%${search.trim()}%`;
+    query += ` AND (a.student_id LIKE ? OR s.name LIKE ? OR t.title LIKE ? OR cp.name LIKE ?)`;
+    params.push(term, term, term, term);
+  }
+
+  query += ` ORDER BY a.completed_at DESC, a.assigned_at DESC`;
+
+  const submissions = db.prepare(query).all(...params);
+
+  const parsedSubmissions = submissions.map(sub => {
+    let parsedExif = null;
+    try {
+      if (sub.exif_metadata) parsedExif = JSON.parse(sub.exif_metadata);
+    } catch (e) {}
+    return {
+      ...sub,
+      exif_metadata: parsedExif
+    };
+  });
+
+  const stats = {
+    total: submissions.length,
+    pending: submissions.filter(s => s.status === 'submitted').length,
+    approved: submissions.filter(s => s.status === 'verified').length,
+    rejected: submissions.filter(s => s.status === 'rejected').length
+  };
+
+  res.json({ submissions: parsedSubmissions, stats });
+});
+
+// 10. Admin: Approve a student task submission
+router.post('/submissions/:id/approve', authenticateToken, (req, res) => {
+  const { id } = req.params;
+  const { notes } = req.body;
+  const reviewer = req.user?.username || 'admin';
+
+  const assignment = db.prepare(`SELECT * FROM student_task_assignments WHERE id = ?`).get(id);
+  if (!assignment) {
+    return res.status(404).json({ error: 'Submission not found' });
+  }
+
+  db.prepare(`
+    UPDATE student_task_assignments SET
+      status = 'verified',
+      verification_score = 100,
+      admin_notes = ?,
+      reviewed_by = ?,
+      reviewed_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(notes || 'Approved by administrator', reviewer, id);
+
+  const updated = db.prepare(`
+    SELECT a.*, s.name as student_name, cp.name as checkpoint_name, t.title as task_title
+    FROM student_task_assignments a
+    JOIN students s ON a.student_id = s.student_id
+    JOIN event_checkpoints cp ON a.checkpoint_id = cp.id
+    JOIN checkpoint_tasks t ON a.task_id = t.id
+    WHERE a.id = ?
+  `).get(id);
+
+  const reqIo = req.app.get('io');
+  if (reqIo) {
+    reqIo.emit('task_submission_approved', {
+      assignmentId: parseInt(id),
+      eventId: updated.event_id,
+      checkpointId: updated.checkpoint_id,
+      studentId: updated.student_id,
+      assignment: updated
+    });
+  }
+
+  res.json({
+    success: true,
+    message: `Task submission for ${updated.student_name} (${updated.student_id}) approved!`,
+    assignment: updated
+  });
+});
+
+// 11. Admin: Reject a student task submission
+router.post('/submissions/:id/reject', authenticateToken, (req, res) => {
+  const { id } = req.params;
+  const { reason } = req.body;
+  const reviewer = req.user?.username || 'admin';
+
+  const assignment = db.prepare(`SELECT * FROM student_task_assignments WHERE id = ?`).get(id);
+  if (!assignment) {
+    return res.status(404).json({ error: 'Submission not found' });
+  }
+
+  db.prepare(`
+    UPDATE student_task_assignments SET
+      status = 'rejected',
+      admin_notes = ?,
+      reviewed_by = ?,
+      reviewed_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(reason || 'Submission rejected by administrator. Please re-submit a valid task verification.', reviewer, id);
+
+  const updated = db.prepare(`
+    SELECT a.*, s.name as student_name, cp.name as checkpoint_name, t.title as task_title
+    FROM student_task_assignments a
+    JOIN students s ON a.student_id = s.student_id
+    JOIN event_checkpoints cp ON a.checkpoint_id = cp.id
+    JOIN checkpoint_tasks t ON a.task_id = t.id
+    WHERE a.id = ?
+  `).get(id);
+
+  const reqIo = req.app.get('io');
+  if (reqIo) {
+    reqIo.emit('task_submission_rejected', {
+      assignmentId: parseInt(id),
+      eventId: updated.event_id,
+      checkpointId: updated.checkpoint_id,
+      studentId: updated.student_id,
+      assignment: updated,
+      reason: reason || 'Submission rejected'
+    });
+  }
+
+  res.json({
+    success: true,
+    message: `Task submission for ${updated.student_name} (${updated.student_id}) rejected.`,
+    assignment: updated
+  });
+});
+
+// 12. Admin: Bulk approve submissions
+router.post('/submissions/bulk-approve', authenticateToken, (req, res) => {
+  const { submission_ids, notes } = req.body;
+  const reviewer = req.user?.username || 'admin';
+
+  if (!Array.isArray(submission_ids) || submission_ids.length === 0) {
+    return res.status(400).json({ error: 'submission_ids array is required' });
+  }
+
+  const updateStmt = db.prepare(`
+    UPDATE student_task_assignments SET
+      status = 'verified',
+      verification_score = 100,
+      admin_notes = ?,
+      reviewed_by = ?,
+      reviewed_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `);
+
+  const approvedIds = [];
+  const approveTx = db.transaction((ids) => {
+    for (const id of ids) {
+      updateStmt.run(notes || 'Bulk approved by administrator', reviewer, id);
+      approvedIds.push(id);
+    }
+  });
+
+  approveTx(submission_ids);
+
+  const reqIo = req.app.get('io');
+  if (reqIo) {
+    reqIo.emit('task_submissions_bulk_approved', { approvedIds });
+  }
+
+  res.json({
+    success: true,
+    message: `Successfully approved ${approvedIds.length} task submissions.`,
+    approvedIds
   });
 });
 
