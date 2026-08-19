@@ -3,6 +3,30 @@
 
 ---
 
+## 📌 Version 4.2 (Checkpoint Verification State Machine, Task Distribution Auto-Seeding & Time-Out Gating)
+
+### 🚀 What Has Been Updated & Implemented
+
+#### 1. 🔄 Attendance & Checkpoint Lifecycle State Machine (`StudentHome.jsx`, `server/routes/checkpoints.js`, `server/routes/attendance.js`)
+- **Pre-Time-In Gating**: Checkpoint verification tasks are strictly locked and hidden prior to Time In. Task distribution algorithms are suppressed until an active, valid Time-In record exists.
+- **Genuine Verification Lifecycle**: Checkpoint stations are **never** auto-completed on physical proximity entry alone. Proximity records visit telemetry (`student_checkpoint_visits`), but a station is only marked `Verified & Completed ✅` after a photo/text task submission passes EXIF and perceptual hash verification (`status = 'verified'` in `student_task_assignments`).
+- **Strict Time-Out Gating**: Time Out remains locked/disabled in the UI and blocked on the server (`HTTP 403`) until all required checkpoint tasks are completed ($N/N$ stations verified).
+- **Penalty Engine Integration**: Added Rule 6 (`INCOMPLETE_CHECKPOINT_TASKS`) to `penaltyEngine.js`. If an event concludes and a student fails to complete station tasks, the system automatically flags a violation penalty.
+
+#### 2. 🔀 Anti-Collusion Task Distribution Auto-Seeding (`server/services/taskDistribution.js`)
+- **Zero Null-Assignment Failures**: If an administrator creates new checkpoints without manual task entries, `assignCheckpointTask` automatically seeds distinct station photo and code verification tasks into `checkpoint_tasks`.
+- **Persistent Task Assignments**: Guarantees that every student entering a station receives a persisted `student_task_assignments` record with a valid assignment ID, eliminating placeholder fallbacks (`DEFAULT_STATION_TASK`).
+
+#### 3. 📸 Native Photo & Gallery Picker (`StudentHome.jsx`)
+- **Flexible Media Capture**: Removed `capture="environment"` attribute to unlock native OS selection sheets on iOS Safari and Android Chrome, allowing students to either snap live photos or upload existing pictures from their photo gallery.
+- **Real-Time UI Error Feedback**: Replaced silent returns and alert modals with inline diagnostic error banners and immediate status synchronization upon submission.
+
+#### 4. 🧪 8-Step End-to-End Integration Test Suite (`server/scripts/testFullSequence.js`)
+- Automated verification of the full lifecycle: `Pre-Time-In Lock` $\to$ `Biometric Time-In` $\to$ `Task Distribution` $\to$ `0-Verified Check` $\to$ `Time-Out Lock Gating` $\to$ `Task Verification (EXIF & dHash)` $\to$ `Time-Out Unlocking` $\to$ `Penalty Engine Compliant Check`.
+- Executable via `npm run test:sequence` or `npm run test:all`.
+
+---
+
 ## 📌 Version 4.1 (WebAuthn Primary Platform Biometrics & Email OTP Fallback Architecture)
 
 ### 🚀 What Has Been Updated & Implemented

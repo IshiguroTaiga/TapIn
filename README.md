@@ -16,10 +16,12 @@
 - **Grace Period Countdown**: Real-time 15-minute countdown for students who step outside the venue polygon perimeter.
 
 ### 2. Multi-Checkpoint Task Verification System
+- **Attendance State Machine Gating**: Checkpoint tasks are strictly locked and hidden prior to Time In. Time Out is locked and disabled until all checkpoint tasks are verified. If a student leaves without completing tasks, the Penalty Engine generates an `INCOMPLETE_CHECKPOINT_TASKS` violation.
 - **Interactive Click-to-Place Checkpoint Canvas**: Admins click anywhere inside the venue polygon on the map to drop station pins (`C1`, `C2`, `C3`, up to 3 max), drag them live to reposition, and click nodes to configure their task pools.
-- **Anti-Collusion Task Distribution**: Assigns tasks from checkpoint pools while filtering tasks recently assigned to other students within a collision window (default 10 mins).
+- **Anti-Collusion Task Distribution**: Assigns tasks from checkpoint pools while filtering tasks recently assigned to other students within a collision window (default 10 mins). Auto-seeds distinct tasks if pools are empty to guarantee valid assignments.
 - **Admin Toggles**: "Allow Duplicate Tasks", "Randomize Tasks", and adjustable collision windows.
 - **Photo Verification Analytics**:
+  - *Native Photo / Gallery Picker*: Flexible choice between live camera capture and gallery/file upload.
   - *Pure-JS EXIF Extraction*: Extracts photo capture timestamp and GPS coordinates, cross-checking against checkpoint coordinates.
   - *Perceptual Hashing Duplicate Detection*: Computes 64-bit Difference Hash (`dHash`) and measures **Hamming Distance** against prior submissions to flag duplicate photo reuse ($\ge 92\%$ visual match).
 
@@ -60,7 +62,8 @@ npm run seed
 # Run Test Suites
 npm test               # Run 15-test Ray-Casting PIP Geofence suite
 npm run test:features  # Run 13-test WebAuthn, OTP & Checkpoint suite
-npm run test:all       # Run all 28 automated backend test suites
+npm run test:sequence  # Run 8-test Time-In -> Tasks -> Time-Out lifecycle suite
+npm run test:all       # Run all 36 automated test suites (PIP + Features + Sequence)
 
 # Run Research Evaluation Harnesses
 npm run generate-dataset  # Generate benchmark trace dataset

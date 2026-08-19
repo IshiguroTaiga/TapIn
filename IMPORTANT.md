@@ -147,15 +147,25 @@ Classification: $P \ge 0.5 \implies \text{Spoofed}$.
 - **Draggable Catchment Zones**: Station pins can be dragged live to reposition their location and adjust catchment radius ($10\text{m} - 50\text{m}$).
 - **Click Node to Configure Tasks**: Clicking any station node directly opens its task pool manager to append photo and text tasks with instant visual feedback.
 
+### Checkpoint Tasks & Attendance Gating State Machine
+TapIn enforces a deterministic physical attendance lifecycle:
+1. **Pre-Time-In State**: Checkpoint tasks are strictly locked and hidden (`🔒 Checkpoint Tasks Locked`). Proximity task allocation is disabled until the student logs a valid Time-In.
+2. **Active Timed-In State**: Once Timed In, assigned station tasks unlock in the student HUD. Moving into a checkpoint station zone ($15\text{m} - 30\text{m}$) activates the task submission card.
+3. **Genuine Verification Requirement**: Physical proximity entry records a visit log, but **only a successful photo/text verification API response** marks a station as `Verified & Completed ✅`.
+4. **Time-Out Gating**: The Time Out button remains **locked and disabled** until $100\%$ of assigned checkpoint tasks are verified ($N/N$ stations completed).
+5. **Penalty Engine Violation**: If an event's Time Out window closes and a student has unverified checkpoint tasks, the system raises an `INCOMPLETE_CHECKPOINT_TASKS` violation with disciplinary penalty flags.
+
 ### Anti-Collusion Task Distribution Algorithm
 When a student enters a checkpoint catchment, the server assigns a task from that station's pool:
 1. Queries `student_task_assignments` within the configurable `task_collision_window_minutes` (default 10 mins).
 2. Excludes tasks recently given to other students to prevent queue crowding and group collusion.
-3. Supports admin toggles: `allow_duplicate_tasks` and `randomize_tasks` (uniform random vs. balanced round-robin).
+3. If an admin creates a checkpoint without manual tasks, the system auto-seeds distinct station verification tasks to guarantee zero null-assignment failures.
+4. Supports admin toggles: `allow_duplicate_tasks` and `randomize_tasks` (uniform random vs. balanced round-robin).
 
 ### Photo Verification Analytics: EXIF & Perceptual Hashing
-1. **Pure-JS EXIF Extraction**: Parses JPEG APP1 metadata to extract camera capture timestamp and GPS coordinates, cross-checking against checkpoint coordinates ($\Delta d > 100\text{m} \implies \text{EXIF\_LOCATION\_MISMATCH}$).
-2. **Perceptual-Hash Duplicate Detection**: Computes a 64-bit Difference Hash (`dHash`) and measures **Hamming Distance** against prior submissions. If $\text{Hamming Distance} \le 5$ ($\ge 92\%$ visual similarity), flags `DUPLICATE_PHOTO_DETECTED` and logs the duplicate source.
+1. **Camera or Gallery Choice**: File input lets users take live photos or choose existing images from their photo library without forced camera locks.
+2. **Pure-JS EXIF Extraction**: Parses JPEG APP1 metadata to extract camera capture timestamp and GPS coordinates, cross-checking against checkpoint coordinates ($\Delta d > 100\text{m} \implies \text{EXIF\_LOCATION\_MISMATCH}$).
+3. **Perceptual-Hash Duplicate Detection**: Computes a 64-bit Difference Hash (`dHash`) and measures **Hamming Distance** against prior submissions. If $\text{Hamming Distance} \le 5$ ($\ge 92\%$ visual similarity), flags `DUPLICATE_PHOTO_DETECTED` and logs the duplicate source.
 
 ---
 
@@ -172,3 +182,9 @@ When a student enters a checkpoint catchment, the server assigns a task from tha
 
 ### Q4: How does the system detect fake GPS location apps?
 > **Answer**: "TapIn uses a multi-sensor cross-validation engine that evaluates five simultaneous heuristics: velocity limits ($>15\text{ m/s}$), static accuracy repetition, timestamp continuity, accelerometer motion mismatch, and stationary GPS anomaly signals (detecting static software emulators holding coordinates with near-zero movement over 5+ minutes)."
+
+### Q5: How do checkpoint tasks prevent proxy attendance and photo sharing?
+> **Answer**: "Every checkpoint task uses dual-layer analytics: pure-JS EXIF binary extraction verifies that the photo was captured at the physical station coordinates within the event timeframe, and a 64-bit perceptual hash (`dHash`) cross-checks the image against all other students' submissions to catch duplicates with $\le 5$-bit Hamming distance."
+
+### Q6: How are checkpoint tasks coordinated with Time In and Time Out?
+> **Answer**: "TapIn implements an attendance state machine: checkpoint tasks remain locked until the student logs a valid Time In. Once timed in, students visit stations to complete assigned missions. Time Out is strictly gated and disabled until all checkpoint tasks are verified. If a student leaves without completing tasks, the Penalty Engine automatically flags an `INCOMPLETE_CHECKPOINT_TASKS` violation."
