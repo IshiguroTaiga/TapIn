@@ -202,6 +202,7 @@ router.delete('/tasks/:taskId', authenticateToken, requireRole(['admin', 'supera
 });
 
 // 6. Student Proximity & Dynamic Task Assignment
+// 6. Student Proximity & Dynamic Task Assignment (Gated behind valid Time-In)
 router.post('/proximity', (req, res) => {
   const { student_id, event_id, lat, lng, accuracy, signature } = req.body;
 
@@ -219,11 +220,17 @@ router.post('/proximity', (req, res) => {
     signatureValid = verifySignature(student.public_key, payload, signature) ? 1 : 0;
   }
 
+  // Check if student has valid Time-In for this event
+  const validTimeIn = db.prepare(`
+    SELECT id FROM attendance_logs 
+    WHERE event_id = ? AND student_id = ? AND action = 'time_in' AND status != 'rejected'
+  `).get(parseInt(event_id), student.student_id);
+
   const proximity = evaluateStudentCheckpointProximity(parseFloat(lat), parseFloat(lng), parseInt(event_id), student.student_id);
 
   let taskAssignment = null;
   if (proximity.inCheckpointZone && proximity.matchedCheckpoint) {
-    // Record Checkpoint Visit
+    // Record Checkpoint Physical Visit
     recordCheckpointVisit(parseInt(event_id), proximity.matchedCheckpoint.id, student.student_id, {
       lat: parseFloat(lat),
       lng: parseFloat(lng),
@@ -231,13 +238,16 @@ router.post('/proximity', (req, res) => {
       distance: proximity.matchedCheckpoint.distanceMeters
     }, signatureValid);
 
-    // Assign Task via Task Distribution Algorithm
-    taskAssignment = assignCheckpointTask(parseInt(event_id), proximity.matchedCheckpoint.id, student.student_id);
+    // Only assign tasks if student is Timed In
+    if (validTimeIn) {
+      taskAssignment = assignCheckpointTask(parseInt(event_id), proximity.matchedCheckpoint.id, student.student_id);
+    }
   }
 
   res.json({
     proximity,
     taskAssignment,
+    hasTimedIn: !!validTimeIn,
     signatureVerified: student.public_key ? signatureValid === 1 : null
   });
 });
@@ -360,6 +370,8 @@ router.post('/tasks/:assignmentId/submit', upload.single('photo'), (req, res) =>
 // 8. Get student checkpoint and task progress for an event
 router.get('/student-status/:eventId/:studentId', (req, res) => {
   const { eventId, studentId } = req.params;
+  const sId = studentId.trim();
+  const eId = parseInt(eventId);
 
   const visits = db.prepare(`
     SELECT v.*, cp.name as checkpoint_name, cp.checkpoint_order
@@ -367,22 +379,38 @@ router.get('/student-status/:eventId/:studentId', (req, res) => {
     JOIN event_checkpoints cp ON v.checkpoint_id = cp.id
     WHERE v.event_id = ? AND v.student_id = ?
     ORDER BY cp.checkpoint_order ASC
-  `).all(eventId, studentId.trim());
+  `).all(eId, sId);
 
   const assignments = db.prepare(`
-    SELECT a.*, t.title as task_title, t.description as task_description, t.task_type, cp.name as checkpoint_name
+    SELECT a.*, t.title as task_title, t.description as task_description, t.task_type, cp.name as checkpoint_name, cp.checkpoint_order
     FROM student_task_assignments a
     JOIN checkpoint_tasks t ON a.task_id = t.id
     JOIN event_checkpoints cp ON a.checkpoint_id = cp.id
     WHERE a.event_id = ? AND a.student_id = ?
     ORDER BY a.assigned_at ASC
-  `).all(eventId, studentId.trim());
+  `).all(eId, sId);
+
+  const totalCheckpoints = db.prepare(`SELECT COUNT(*) as count FROM event_checkpoints WHERE event_id = ?`).get(eId)?.count || 0;
+
+  // Distinct checkpoints where the student's task has status = 'verified'
+  const verifiedRows = db.prepare(`
+    SELECT DISTINCT checkpoint_id 
+    FROM student_task_assignments 
+    WHERE event_id = ? AND student_id = ? AND status = 'verified'
+  `).all(eId, sId);
+
+  const verifiedCheckpointIds = verifiedRows.map(r => r.checkpoint_id);
+  const allTasksDone = totalCheckpoints > 0 ? verifiedCheckpointIds.length >= totalCheckpoints : true;
 
   res.json({
-    eventId: parseInt(eventId),
-    studentId: studentId.trim(),
+    eventId: eId,
+    studentId: sId,
     visits,
-    assignments
+    assignments,
+    verifiedCheckpointIds,
+    completedStations: verifiedCheckpointIds.length,
+    totalStations: totalCheckpoints,
+    allTasksDone
   });
 });
 

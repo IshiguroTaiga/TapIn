@@ -115,6 +115,23 @@ function evaluateEventPenalties(eventId) {
       }
     }
 
+    // 6. Incomplete Checkpoint Tasks
+    const totalCheckpoints = db.prepare(`SELECT COUNT(*) as count FROM event_checkpoints WHERE event_id = ?`).get(eventId)?.count || 0;
+    if (totalCheckpoints > 0 && timeInLogs.length > 0) {
+      const verifiedAssignments = db.prepare(`
+        SELECT COUNT(DISTINCT checkpoint_id) as count 
+        FROM student_task_assignments 
+        WHERE event_id = ? AND student_id = ? AND status = 'verified'
+      `).get(eventId, student.student_id)?.count || 0;
+
+      if (verifiedAssignments < totalCheckpoints) {
+        violationsDetected.push({
+          code: 'INCOMPLETE_CHECKPOINT_TASKS',
+          description: violationConfigMap['INCOMPLETE_CHECKPOINT_TASKS'] || `Checkpoint Tasks Incomplete (${verifiedAssignments}/${totalCheckpoints} stations verified)`
+        });
+      }
+    }
+
     // Record violations in DB
     violationsDetected.forEach(v => {
       insertViolation.run(eventId, student.student_id, v.code, v.description);

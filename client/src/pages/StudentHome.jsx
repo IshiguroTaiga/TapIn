@@ -27,10 +27,10 @@ import {
   Eye,
   Fingerprint,
   Mail,
-  AlertCircle,
   Copy,
   Check,
   FileCode,
+  Lock,
   X
 } from 'lucide-react';
 
@@ -123,12 +123,15 @@ export default function StudentHome({ onOpenPwaNotice }) {
   const [taskAnswerText, setTaskAnswerText] = useState('');
   const [submittingTask, setSubmittingTask] = useState(false);
   const [taskSubmissionResult, setTaskSubmissionResult] = useState(null);
+  const [taskSubmitError, setTaskSubmitError] = useState(null);
   const [studentVisits, setStudentVisits] = useState([]);
+  const [verifiedCheckpointIds, setVerifiedCheckpointIds] = useState([]);
   const [checkingProximity, setCheckingProximity] = useState(false);
 
   // Real-Time Student Attendance State & Action Selector
   const [attendanceStatus, setAttendanceStatus] = useState(null);
   const [forcedAction, setForcedAction] = useState('auto'); // 'auto' | 'time_in' | 'time_out'
+  const [authStepLog, setAuthStepLog] = useState(null);
 
   const watchIdRef = useRef(null);
   const graceTimerRef = useRef(null);
@@ -280,6 +283,7 @@ export default function StudentHome({ onOpenPwaNotice }) {
     try {
       const res = await axios.get(`/api/checkpoints/student-status/${eventId}/${encodeURIComponent(sId)}`);
       setStudentVisits(res.data.visits || []);
+      setVerifiedCheckpointIds(res.data.verifiedCheckpointIds || []);
     } catch (err) {}
   };
 
@@ -767,6 +771,7 @@ export default function StudentHome({ onOpenPwaNotice }) {
     const file = e.target.files[0];
     if (file) {
       setTaskPhotoFile(file);
+      setTaskSubmitError(null);
       const reader = new FileReader();
       reader.onload = () => setTaskPhotoPreview(reader.result);
       reader.readAsDataURL(file);
@@ -774,12 +779,22 @@ export default function StudentHome({ onOpenPwaNotice }) {
   };
 
   const handleSubmitTask = async () => {
-    if (!activeTaskAssignment?.assignment?.id) return;
+    setTaskSubmitError(null);
+
+    if (!activeTaskAssignment?.assignment?.id) {
+      setTaskSubmitError('No active task assignment found for this checkpoint. Please ensure you are inside the checkpoint station zone.');
+      return;
+    }
     const assignmentId = activeTaskAssignment.assignment.id;
     const taskType = activeTaskAssignment.task.task_type;
 
     if (taskType === 'photo' && !taskPhotoFile) {
-      alert('Please take or choose a verification photo first.');
+      setTaskSubmitError('Please choose or take a verification photo first before submitting.');
+      return;
+    }
+
+    if (taskType === 'text' && !taskAnswerText.trim()) {
+      setTaskSubmitError('Please enter your response or station code.');
       return;
     }
 
@@ -802,12 +817,18 @@ export default function StudentHome({ onOpenPwaNotice }) {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       setTaskSubmissionResult(res.data);
-      if (activeEvent) fetchStudentCheckpointStatus(activeEvent.id, studentId.trim());
+      if (activeEvent) {
+        fetchStudentCheckpointStatus(activeEvent.id, studentId.trim());
+        fetchStudentAttendanceStatus(activeEvent.id, studentId.trim());
+      }
     } catch (err) {
       if (err.response?.data) {
         setTaskSubmissionResult(err.response.data);
       } else {
-        alert('Failed to submit task: ' + err.message);
+        setTaskSubmitError(err.message || 'Failed to submit task verification.');
+      }
+      if (activeEvent) {
+        fetchStudentCheckpointStatus(activeEvent.id, studentId.trim());
       }
     } finally {
       setSubmittingTask(false);
@@ -1273,39 +1294,51 @@ export default function StudentHome({ onOpenPwaNotice }) {
             </div>
           )}
         </div>
-      </div>
 
-      {/* Step 3: Checkpoint Mission & Task Verification HUD */}
+      {/* Step 3: Checkpoint Mission & Task Verification HUD (Gated Behind Time-In) */}
       {activeEvent && (activeEvent.checkpoints || []).length > 0 && (
-        <div className="glass-card rounded-2xl p-4 sm:p-6 space-y-4 border border-cyan-500/30">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-3">
-              <div className="p-3 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
-                <CheckSquare className="w-6 h-6" />
+        !attendanceStatus?.hasTimedIn ? (
+          <div className="glass-card rounded-2xl p-6 border border-slate-800 text-center space-y-3">
+            <div className="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800 text-slate-400 mx-auto flex items-center justify-center">
+              <Lock className="w-6 h-6 text-slate-400" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-white">3. Multi-Checkpoint Tasks (Locked)</h3>
+              <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
+                Checkpoint missions and task verifications are locked until you submit <strong>TIME IN</strong>. Please complete Time-In in Step 4 below to unlock your assigned checkpoint missions.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="glass-card rounded-2xl p-4 sm:p-6 space-y-4 border border-cyan-500/30">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-3">
+                <div className="p-3 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                  <CheckSquare className="w-6 h-6" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-white">3. Multi-Checkpoint Task Verification</h2>
+                  <p className="text-xs text-slate-400">Complete tasks at nested checkpoint zones to verify physical attendance.</p>
+                </div>
               </div>
-              <div>
-                <h2 className="text-base font-bold text-white">3. Multi-Checkpoint Task Verification</h2>
-                <p className="text-xs text-slate-400">Complete tasks at nested checkpoint zones to verify physical attendance.</p>
-              </div>
+
+              <span className={`px-3 py-1 rounded-full text-xs font-bold border ${
+                verifiedCheckpointIds.length >= (activeEvent.checkpoints || []).length
+                  ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+                  : 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20'
+              }`}>
+                {verifiedCheckpointIds.length}/{(activeEvent.checkpoints || []).length} Stations Verified
+              </span>
             </div>
 
-            <span className="px-3 py-1 rounded-full text-xs font-bold bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
-              {studentVisits.length}/{(activeEvent.checkpoints || []).length} Stations Completed
-            </span>
-          </div>
-
-          {/* Session Stage Guidance Banner */}
-          {studentInfo && (
+            {/* Session Stage Guidance Banner */}
             <div>
-              {!attendanceStatus?.hasTimedIn ? (
-                <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-                  <span>You are not yet Timed In. You can explore checkpoint stations now, or submit your <strong>Time In</strong> below first.</span>
-                </div>
-              ) : !attendanceStatus?.hasTimedOut ? (
+              {!attendanceStatus?.hasTimedOut ? (
                 <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 flex items-center gap-2">
                   <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>You are <strong>Timed In</strong>! Complete station missions by moving within checkpoint zones before submitting <strong>Time Out</strong>.</span>
+                  <span>
+                    You are <strong>Timed In</strong>! Move into checkpoint station radiuses to receive and submit assigned photo / text tasks.
+                  </span>
                 </div>
               ) : (
                 <div className="p-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-xs text-indigo-300 flex items-center gap-2">
@@ -1314,146 +1347,152 @@ export default function StudentHome({ onOpenPwaNotice }) {
                 </div>
               )}
             </div>
-          )}
 
-          {/* Checkpoint Station Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-            {(activeEvent.checkpoints || []).map((cp, idx) => {
-              const isVisited = studentVisits.some(v => v.checkpoint_id === cp.id);
-              const isMatched = checkpointProximity?.matchedCheckpoint?.id === cp.id;
+            {/* Checkpoint Station Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              {(activeEvent.checkpoints || []).map((cp, idx) => {
+                const isVerified = verifiedCheckpointIds.includes(cp.id);
+                const isMatched = checkpointProximity?.matchedCheckpoint?.id === cp.id;
 
-              return (
-                <div
-                  key={cp.id}
-                  className={`p-3.5 rounded-xl border transition-all ${
-                    isVisited
-                      ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-300'
-                      : isMatched
-                      ? 'bg-cyan-950/40 border-cyan-400 shadow-lg shadow-cyan-500/20 text-cyan-200'
-                      : 'bg-slate-900/60 border-slate-800 text-slate-400'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[10px] font-bold uppercase tracking-wider">
-                      Station #{cp.checkpoint_order || (idx + 1)}
-                    </span>
-                    {isVisited ? (
-                      <CheckCircle className="w-4 h-4 text-emerald-400" />
-                    ) : isMatched ? (
-                      <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
-                    ) : null}
-                  </div>
-                  <h4 className="font-bold text-xs text-white truncate">{cp.name}</h4>
-                  <p className="text-[11px] text-slate-400 mt-1">
-                    {isVisited ? 'Verified & Completed ✅' : isMatched ? 'Inside Zone (Task Active!)' : `Radius: ${cp.radius_m || 20}m`}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Active Assigned Task Box when in a Checkpoint Zone */}
-          {activeTaskAssignment && activeTaskAssignment.task && (
-            <div className="p-4 rounded-xl bg-slate-900/90 border border-cyan-500/40 space-y-3 animate-in fade-in">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-500/20 text-cyan-300 uppercase">
-                    Assigned Checkpoint Mission
-                  </span>
-                  <h3 className="text-sm font-bold text-white mt-1">{activeTaskAssignment.task.title}</h3>
-                  <p className="text-xs text-slate-300 mt-0.5">{activeTaskAssignment.task.description}</p>
-                </div>
-                <div className="text-[10px] font-mono text-slate-400 bg-slate-950 px-2 py-1 rounded border border-slate-800 shrink-0">
-                  {activeTaskAssignment.algorithmDetails?.mode || 'COLLISION-FREE'}
-                </div>
-              </div>
-
-              {activeTaskAssignment.task.instructions && (
-                <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800 text-xs text-slate-300">
-                  <span className="font-semibold text-slate-200">Instructions: </span>
-                  {activeTaskAssignment.task.instructions}
-                </div>
-              )}
-
-              {/* Task Upload / Input Form */}
-              {activeTaskAssignment.task.task_type === 'photo' ? (
-                <div className="space-y-2 pt-1">
-                  <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                    <Camera className="w-4 h-4 text-cyan-400" />
-                    <span>Upload or Capture Verification Photo (EXIF + Duplicate Hash Analyzed)</span>
-                  </label>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    onChange={handleTaskPhotoChange}
-                    className="block w-full text-xs text-slate-400 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-cyan-600 file:text-white hover:file:bg-cyan-500 cursor-pointer"
-                  />
-
-                  {taskPhotoPreview && (
-                    <div className="relative mt-2 rounded-xl overflow-hidden border border-cyan-500/30 max-h-48 w-full bg-slate-950 flex items-center justify-center">
-                      <img src={taskPhotoPreview} alt="Verification Preview" className="h-48 object-contain" />
+                return (
+                  <div
+                    key={cp.id}
+                    className={`p-3.5 rounded-xl border transition-all ${
+                      isVerified
+                        ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-300'
+                        : isMatched
+                        ? 'bg-cyan-950/40 border-cyan-400 shadow-lg shadow-cyan-500/20 text-cyan-200'
+                        : 'bg-slate-900/60 border-slate-800 text-slate-400'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] font-bold uppercase tracking-wider">
+                        Station #{cp.checkpoint_order || (idx + 1)}
+                      </span>
+                      {isVerified ? (
+                        <CheckCircle className="w-4 h-4 text-emerald-400" />
+                      ) : isMatched ? (
+                        <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
+                      ) : null}
                     </div>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-1 pt-1">
-                  <label className="text-xs font-medium text-slate-300">Your Response</label>
-                  <input
-                    type="text"
-                    value={taskAnswerText}
-                    onChange={(e) => setTaskAnswerText(e.target.value)}
-                    placeholder="Enter requested answer / room number"
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-cyan-500"
-                  />
-                </div>
-              )}
-
-              <button
-                onClick={handleSubmitTask}
-                disabled={submittingTask || (activeTaskAssignment.task.task_type === 'photo' && !taskPhotoFile)}
-                className="w-full py-3 px-4 rounded-xl font-bold text-xs bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white shadow-lg shadow-cyan-600/20 flex items-center justify-center gap-2 transition-all disabled:opacity-50 cursor-pointer"
-              >
-                {submittingTask ? (
-                  <span className="flex items-center gap-2">
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                    Analyzing EXIF Geolocation & Perceptual Hash...
-                  </span>
-                ) : (
-                  <>
-                    <UploadCloud className="w-4 h-4" />
-                    <span>Submit & Verify Checkpoint Task</span>
-                  </>
-                )}
-              </button>
-
-              {/* Task Outcome Result */}
-              {taskSubmissionResult && (
-                <div className={`p-3.5 rounded-xl border text-xs space-y-1.5 animate-in fade-in ${
-                  taskSubmissionResult.success
-                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-                    : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
-                }`}>
-                  <div className="font-bold flex items-center gap-1.5">
-                    {taskSubmissionResult.success ? (
-                      <CheckCircle className="w-4 h-4 text-emerald-400" />
-                    ) : (
-                      <ShieldAlert className="w-4 h-4 text-rose-400" />
-                    )}
-                    <span>{taskSubmissionResult.message}</span>
+                    <h4 className="font-bold text-xs text-white truncate">{cp.name}</h4>
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      {isVerified ? 'Verified & Completed ✅' : isMatched ? 'Inside Zone (Task Active!)' : `Radius: ${cp.radius_m || 20}m`}
+                    </p>
                   </div>
-
-                  {taskSubmissionResult.photoAnalysis && (
-                    <div className="pt-1.5 border-t border-slate-800 text-[11px] grid grid-cols-2 gap-1.5 text-slate-300">
-                      <div>EXIF GPS: <strong>{taskSubmissionResult.photoAnalysis.metadata.gpsExtracted ? 'Present' : 'Not found'}</strong></div>
-                      <div>Hash Match: <strong className={taskSubmissionResult.photoAnalysis.duplicateDetection.isDuplicate ? 'text-rose-400 font-bold' : 'text-emerald-400'}>{taskSubmissionResult.photoAnalysis.duplicateDetection.similarityPercentage} Duplicate</strong></div>
-                    </div>
-                  )}
-                </div>
-              )}
+                );
+              })}
             </div>
-          )}
-        </div>
+
+            {/* Active Assigned Task Box when in a Checkpoint Zone */}
+            {activeTaskAssignment && activeTaskAssignment.task && (
+              <div className="p-4 rounded-xl bg-slate-900/90 border border-cyan-500/40 space-y-3 animate-in fade-in">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-500/20 text-cyan-300 uppercase">
+                      Assigned Checkpoint Mission
+                    </span>
+                    <h3 className="text-sm font-bold text-white mt-1">{activeTaskAssignment.task.title}</h3>
+                    <p className="text-xs text-slate-300 mt-0.5">{activeTaskAssignment.task.description}</p>
+                  </div>
+                  <div className="text-[10px] font-mono text-slate-400 bg-slate-950 px-2 py-1 rounded border border-slate-800 shrink-0">
+                    {activeTaskAssignment.algorithmDetails?.mode || 'COLLISION-FREE'}
+                  </div>
+                </div>
+
+                {activeTaskAssignment.task.instructions && (
+                  <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800 text-xs text-slate-300">
+                    <span className="font-semibold text-slate-200">Instructions: </span>
+                    {activeTaskAssignment.task.instructions}
+                  </div>
+                )}
+
+                {/* Task Upload / Input Form */}
+                {activeTaskAssignment.task.task_type === 'photo' ? (
+                  <div className="space-y-2 pt-1">
+                    <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                      <Camera className="w-4 h-4 text-cyan-400" />
+                      <span>Take Photo with Camera or Choose from Gallery / Files:</span>
+                    </label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleTaskPhotoChange}
+                      className="block w-full text-xs text-slate-400 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-cyan-600 file:text-white hover:file:bg-cyan-500 cursor-pointer"
+                    />
+
+                    {taskPhotoPreview && (
+                      <div className="relative mt-2 rounded-xl overflow-hidden border border-cyan-500/30 max-h-48 w-full bg-slate-950 flex items-center justify-center">
+                        <img src={taskPhotoPreview} alt="Verification Preview" className="h-48 object-contain" />
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-1 pt-1">
+                    <label className="text-xs font-medium text-slate-300">Your Response</label>
+                    <input
+                      type="text"
+                      value={taskAnswerText}
+                      onChange={(e) => setTaskAnswerText(e.target.value)}
+                      placeholder="Enter requested answer / room number"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
+                )}
+
+                {taskSubmitError && (
+                  <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                    <span>{taskSubmitError}</span>
+                  </div>
+                )}
+
+                <button
+                  onClick={handleSubmitTask}
+                  disabled={submittingTask || (activeTaskAssignment.task.task_type === 'photo' && !taskPhotoFile)}
+                  className="w-full py-3 px-4 rounded-xl font-bold text-xs bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white shadow-lg shadow-cyan-600/20 flex items-center justify-center gap-2 transition-all disabled:opacity-50 cursor-pointer"
+                >
+                  {submittingTask ? (
+                    <span className="flex items-center gap-2">
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Analyzing EXIF Geolocation & Perceptual Hash...
+                    </span>
+                  ) : (
+                    <>
+                      <UploadCloud className="w-4 h-4" />
+                      <span>Submit & Verify Checkpoint Task</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Task Outcome Result */}
+                {taskSubmissionResult && (
+                  <div className={`p-3.5 rounded-xl border text-xs space-y-1.5 animate-in fade-in ${
+                    taskSubmissionResult.success
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                      : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                  }`}>
+                    <div className="font-bold flex items-center gap-1.5">
+                      {taskSubmissionResult.success ? (
+                        <CheckCircle className="w-4 h-4 text-emerald-400" />
+                      ) : (
+                        <ShieldAlert className="w-4 h-4 text-rose-400" />
+                      )}
+                      <span>{taskSubmissionResult.message}</span>
+                    </div>
+
+                    {taskSubmissionResult.photoAnalysis && (
+                      <div className="pt-1.5 border-t border-slate-800 text-[11px] grid grid-cols-2 gap-1.5 text-slate-300">
+                        <div>EXIF GPS: <strong>{taskSubmissionResult.photoAnalysis.metadata.gpsExtracted ? 'Present' : 'Not found'}</strong></div>
+                        <div>Hash Match: <strong className={taskSubmissionResult.photoAnalysis.duplicateDetection.isDuplicate ? 'text-rose-400 font-bold' : 'text-emerald-400'}>{taskSubmissionResult.photoAnalysis.duplicateDetection.similarityPercentage} Duplicate</strong></div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )
       )}
 
       {/* Anti-Spoof Tester & Attendance Submission */}
@@ -1560,6 +1599,27 @@ export default function StudentHome({ onOpenPwaNotice }) {
           </div>
         )}
 
+        {/* Checkpoint Task Gating Notice for Time Out */}
+        {(() => {
+          const totalStations = (activeEvent?.checkpoints || []).length;
+          const completedStations = verifiedCheckpointIds.length;
+          const isTimeOutAction = forcedAction === 'time_out' || (forcedAction === 'auto' && attendanceStatus?.hasTimedIn && !attendanceStatus?.hasTimedOut);
+          const isTimeOutLocked = isTimeOutAction && totalStations > 0 && completedStations < totalStations;
+
+          if (isTimeOutLocked) {
+            return (
+              <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center gap-2.5 animate-in fade-in">
+                <Lock className="w-5 h-5 text-amber-400 shrink-0" />
+                <div>
+                  <strong className="block text-white">Time Out Locked (Checkpoint Tasks Required)</strong>
+                  <span>You must complete and verify all {totalStations} checkpoint station tasks ({completedStations}/{totalStations} verified) before you can Time Out.</span>
+                </div>
+              </div>
+            );
+          }
+          return null;
+        })()}
+
         {/* Anti-Spoof Test Scenario Switcher */}
         <div className="p-3.5 rounded-xl bg-purple-950/30 border border-purple-500/20 space-y-2 text-xs">
           <div className="flex items-center justify-between">
@@ -1583,37 +1643,53 @@ export default function StudentHome({ onOpenPwaNotice }) {
 
         {/* Time In / Time Out Button */}
         <div className="pt-2">
-          <button
-            onClick={handleSubmitAttendance}
-            disabled={submitting || !coords || !studentInfo || !activeEvent}
-            className={`w-full py-4 px-6 rounded-2xl font-bold text-sm text-white shadow-xl flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${
-              authMode === 'email_otp'
-                ? 'bg-gradient-to-r from-cyan-600 via-teal-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 shadow-cyan-600/25'
-                : 'bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 shadow-indigo-600/25'
-            }`}
-          >
-            {submitting ? (
-              <span className="flex items-center gap-2">
-                <RefreshCw className="w-4 h-4 animate-spin" />
-                {authMode === 'webauthn' && hasWebAuthn ? 'Awaiting Biometric Sensor Scan...' : 'Verifying Identity & Telemetry...'}
-              </span>
-            ) : (
-              <>
-                {authMode === 'email_otp' ? (
-                  <Mail className="w-5 h-5 fill-white text-white" />
+          {(() => {
+            const totalStations = (activeEvent?.checkpoints || []).length;
+            const completedStations = verifiedCheckpointIds.length;
+            const isTimeOutAction = forcedAction === 'time_out' || (forcedAction === 'auto' && attendanceStatus?.hasTimedIn && !attendanceStatus?.hasTimedOut);
+            const isTimeOutLocked = isTimeOutAction && totalStations > 0 && completedStations < totalStations;
+
+            return (
+              <button
+                onClick={handleSubmitAttendance}
+                disabled={submitting || !coords || !studentInfo || !activeEvent || isTimeOutLocked}
+                className={`w-full py-4 px-6 rounded-2xl font-bold text-sm text-white shadow-xl flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${
+                  isTimeOutLocked
+                    ? 'bg-slate-800 border border-slate-700 text-slate-400'
+                    : authMode === 'email_otp'
+                    ? 'bg-gradient-to-r from-cyan-600 via-teal-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 shadow-cyan-600/25'
+                    : 'bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 shadow-indigo-600/25'
+                }`}
+              >
+                {submitting ? (
+                  <span className="flex items-center gap-2">
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    {authMode === 'webauthn' && hasWebAuthn ? 'Awaiting Biometric Sensor Scan...' : 'Verifying Identity & Telemetry...'}
+                  </span>
+                ) : isTimeOutLocked ? (
+                  <>
+                    <Lock className="w-4 h-4 text-amber-400" />
+                    <span>Time Out Locked ({completedStations}/{totalStations} Stations Completed)</span>
+                  </>
                 ) : (
-                  <Fingerprint className="w-5 h-5 text-white" />
+                  <>
+                    {authMode === 'email_otp' ? (
+                      <Mail className="w-5 h-5 fill-white text-white" />
+                    ) : (
+                      <Fingerprint className="w-5 h-5 text-white" />
+                    )}
+                    <span>
+                      {forcedAction === 'time_in' || (forcedAction === 'auto' && !attendanceStatus?.hasTimedIn)
+                        ? (authMode === 'email_otp' ? 'Verify Email OTP & Record TIME IN' : (hasWebAuthn ? 'Scan Biometrics & Record TIME IN' : 'Submit TIME IN (Biometrics Recommended)'))
+                        : forcedAction === 'time_out' || (forcedAction === 'auto' && attendanceStatus?.hasTimedIn && !attendanceStatus?.hasTimedOut)
+                        ? (authMode === 'email_otp' ? 'Verify Email OTP & Record TIME OUT' : (hasWebAuthn ? 'Scan Biometrics & Record TIME OUT' : 'Submit TIME OUT (Biometrics Recommended)'))
+                        : (authMode === 'email_otp' ? 'Update Attendance Record (Email OTP)' : (hasWebAuthn ? 'Scan Biometrics & Update Attendance' : 'Update Attendance Record'))}
+                    </span>
+                  </>
                 )}
-                <span>
-                  {forcedAction === 'time_in' || (forcedAction === 'auto' && !attendanceStatus?.hasTimedIn)
-                    ? (authMode === 'email_otp' ? 'Verify Email OTP & Record TIME IN' : (hasWebAuthn ? 'Scan Biometrics & Record TIME IN' : 'Submit TIME IN (Biometrics Recommended)'))
-                    : forcedAction === 'time_out' || (forcedAction === 'auto' && attendanceStatus?.hasTimedIn && !attendanceStatus?.hasTimedOut)
-                    ? (authMode === 'email_otp' ? 'Verify Email OTP & Record TIME OUT' : (hasWebAuthn ? 'Scan Biometrics & Record TIME OUT' : 'Submit TIME OUT (Biometrics Recommended)'))
-                    : (authMode === 'email_otp' ? 'Update Attendance Record (Email OTP)' : (hasWebAuthn ? 'Scan Biometrics & Update Attendance' : 'Update Attendance Record'))}
-                </span>
-              </>
-            )}
-          </button>
+              </button>
+            );
+          })()}
         </div>
 
         {/* Submission Outcome Result */}
@@ -1735,6 +1811,7 @@ export default function StudentHome({ onOpenPwaNotice }) {
         </div>
       )}
 
+      </div>
     </div>
   );
 }

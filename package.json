@@ -10,7 +10,8 @@
     "test": "node server/scripts/testGeofence.js",
     "test:geofence": "node server/scripts/testGeofence.js",
     "test:features": "node server/scripts/testNewFeatures.js",
-    "test:all": "node server/scripts/testGeofence.js && node server/scripts/testNewFeatures.js",
+    "test:sequence": "node server/scripts/testFullSequence.js",
+    "test:all": "node server/scripts/testGeofence.js && node server/scripts/testNewFeatures.js && node server/scripts/testFullSequence.js",
     "eval:rule": "node server/scripts/evalSpoofDetector.js --strategy rule-based",
     "eval:ml": "node server/scripts/evalSpoofDetector.js --strategy ml-classifier",
     "generate-dataset": "node server/scripts/generateSampleDataset.js"

@@ -57,30 +57,44 @@ function assignCheckpointTask(eventId, checkpointId, studentId) {
   const windowMinutes = event && event.task_collision_window_minutes ? parseInt(event.task_collision_window_minutes) : 10;
 
   // 3. Fetch all active tasks for this checkpoint
-  const poolTasks = db.prepare(`
+  let poolTasks = db.prepare(`
     SELECT * FROM checkpoint_tasks 
     WHERE checkpoint_id = ? AND is_active = 1
     ORDER BY id ASC
   `).all(checkpointId);
 
   if (!poolTasks || poolTasks.length === 0) {
-    // Return a default automatic check-in task if admin hasn't created custom tasks yet
-    return {
-      isExisting: false,
-      assignment: null,
-      task: {
-        id: null,
-        title: 'Checkpoint Presence Verification',
-        description: 'Verify your arrival at this checkpoint location.',
-        task_type: 'photo',
-        instructions: 'Take a clear verification photo of the checkpoint landmark or station desk to confirm physical presence.',
-        verification_rule: 'EXIF_METADATA_AND_PHASH'
-      },
-      algorithmDetails: {
-        mode: 'DEFAULT_STATION_TASK',
-        poolSize: 0
-      }
-    };
+    const cp = db.prepare(`SELECT * FROM event_checkpoints WHERE id = ?`).get(checkpointId);
+    const cpName = cp?.name || `Checkpoint #${checkpointId}`;
+
+    const insertTask = db.prepare(`
+      INSERT INTO checkpoint_tasks (checkpoint_id, title, description, task_type, instructions, verification_rule, is_active)
+      VALUES (?, ?, ?, ?, ?, ?, 1)
+    `);
+
+    insertTask.run(
+      checkpointId,
+      `${cpName} Photo Verification`,
+      `Capture a clear verification photograph at ${cpName} to verify physical station presence.`,
+      'photo',
+      'Frame the landmark or station booth clearly in the viewfinder.',
+      'EXIF_METADATA_AND_PHASH'
+    );
+
+    insertTask.run(
+      checkpointId,
+      `${cpName} Station Code`,
+      `Confirm your presence by entering the station or desk identification code at ${cpName}.`,
+      'text',
+      'Look for the physical station sign and type the code or room number.',
+      'EXACT_MATCH'
+    );
+
+    poolTasks = db.prepare(`
+      SELECT * FROM checkpoint_tasks 
+      WHERE checkpoint_id = ? AND is_active = 1
+      ORDER BY id ASC
+    `).all(checkpointId);
   }
 
   // 4. Determine Eligible Tasks

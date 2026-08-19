@@ -149,6 +149,29 @@ router.post('/submit', (req, res) => {
     }
   }
 
+  // 5b. Time-Out Gating: Verify all required checkpoint tasks are completed before Time Out is permitted
+  if (action === 'time_out') {
+    const totalCheckpoints = db.prepare(`SELECT COUNT(*) as count FROM event_checkpoints WHERE event_id = ?`).get(activeEvent.id)?.count || 0;
+    if (totalCheckpoints > 0) {
+      const verifiedAssignments = db.prepare(`
+        SELECT COUNT(DISTINCT checkpoint_id) as count 
+        FROM student_task_assignments 
+        WHERE event_id = ? AND student_id = ? AND status = 'verified'
+      `).get(activeEvent.id, student.student_id)?.count || 0;
+
+      if (verifiedAssignments < totalCheckpoints) {
+        return res.status(403).json({
+          error: `Time Out Locked: You must complete all checkpoint station tasks first (${verifiedAssignments}/${totalCheckpoints} stations verified).`,
+          checkpointProgress: {
+            completedStations: verifiedAssignments,
+            totalStations: totalCheckpoints,
+            remainingStations: totalCheckpoints - verifiedAssignments
+          }
+        });
+      }
+    }
+  }
+
   // 6. Ray-Casting Point-in-Polygon Geofence Verification with Fast Pre-filtering
   const polygon = activeEvent.polygon_coordinates ? normalizePolygon(activeEvent.polygon_coordinates) : [];
   const geofenceResult = isWithinPolygonGeofence([parseFloat(lat), parseFloat(lng)], polygon, {
