@@ -127,17 +127,19 @@ router.post('/submit', (req, res) => {
   }
 
   // 5. Auto-detect action (Time In vs Time Out) if not explicitly forced
+  // 5. Auto-detect action (Time In vs Time Out) ignoring rejected attempts
   const existingLogs = db.prepare(`
     SELECT * FROM attendance_logs 
     WHERE event_id = ? AND student_id = ? 
     ORDER BY timestamp ASC
   `).all(activeEvent.id, student.student_id);
 
+  const existingValidLogs = existingLogs.filter(l => l.status !== 'rejected');
+  const hasTimeIn = existingValidLogs.some(l => l.action === 'time_in');
+  const hasTimeOut = existingValidLogs.some(l => l.action === 'time_out');
+
   let action = forceAction;
   if (!action) {
-    const hasTimeIn = existingLogs.some(l => l.action === 'time_in');
-    const hasTimeOut = existingLogs.some(l => l.action === 'time_out');
-
     if (!hasTimeIn) {
       action = 'time_in';
     } else if (!hasTimeOut) {
@@ -304,6 +306,58 @@ router.post('/submit', (req, res) => {
   }
 
   res.json(responsePayload);
+});
+
+// Student Public Status: Check current student attendance and next action
+router.get('/student-status/:eventId/:studentId', (req, res) => {
+  const { eventId, studentId } = req.params;
+  const sId = String(studentId).trim();
+  const eId = parseInt(eventId);
+
+  const student = db.prepare(`SELECT * FROM students WHERE student_id = ?`).get(sId);
+  if (!student) {
+    return res.status(404).json({ error: 'Student not found in master database' });
+  }
+
+  const logs = db.prepare(`
+    SELECT * FROM attendance_logs 
+    WHERE event_id = ? AND student_id = ?
+    ORDER BY timestamp ASC
+  `).all(eId, sId);
+
+  const validLogs = logs.filter(l => l.status !== 'rejected');
+  const timeInLog = validLogs.find(l => l.action === 'time_in');
+  const timeOutLog = validLogs.find(l => l.action === 'time_out');
+
+  const hasTimedIn = !!timeInLog;
+  const hasTimedOut = !!timeOutLog;
+
+  let nextAction = 'time_in';
+  if (hasTimedIn && !hasTimedOut) {
+    nextAction = 'time_out';
+  } else if (hasTimedIn && hasTimedOut) {
+    nextAction = 'completed';
+  }
+
+  // Checkpoint progress
+  const totalCheckpoints = db.prepare(`SELECT COUNT(*) as count FROM event_checkpoints WHERE event_id = ?`).get(eId)?.count || 0;
+  const visitedCheckpoints = db.prepare(`SELECT COUNT(DISTINCT checkpoint_id) as count FROM student_checkpoint_visits WHERE event_id = ? AND student_id = ?`).get(eId, sId)?.count || 0;
+
+  res.json({
+    eventId: eId,
+    studentId: sId,
+    hasTimedIn,
+    hasTimedOut,
+    nextAction,
+    timeInRecord: timeInLog || null,
+    timeOutRecord: timeOutLog || null,
+    checkpointProgress: {
+      completedStations: visitedCheckpoints,
+      totalStations: totalCheckpoints,
+      allCompleted: totalCheckpoints > 0 ? visitedCheckpoints >= totalCheckpoints : true
+    },
+    logs
+  });
 });
 
 // Live Admin Dashboard Statistics & Student Status Stream

@@ -126,6 +126,10 @@ export default function StudentHome({ onOpenPwaNotice }) {
   const [studentVisits, setStudentVisits] = useState([]);
   const [checkingProximity, setCheckingProximity] = useState(false);
 
+  // Real-Time Student Attendance State & Action Selector
+  const [attendanceStatus, setAttendanceStatus] = useState(null);
+  const [forcedAction, setForcedAction] = useState('auto'); // 'auto' | 'time_in' | 'time_out'
+
   const watchIdRef = useRef(null);
   const graceTimerRef = useRef(null);
   const otpCooldownTimerRef = useRef(null);
@@ -247,15 +251,28 @@ export default function StudentHome({ onOpenPwaNotice }) {
         fetchActiveEvents(res.data?.college);
         if (activeEvent) {
           fetchStudentCheckpointStatus(activeEvent.id, res.data.student_id);
+          fetchStudentAttendanceStatus(activeEvent.id, res.data.student_id);
         }
       } catch (err) {
         setStudentInfo(null);
         setStudentError('Student ID not found in university database');
+        setAttendanceStatus(null);
       }
     }, 300);
 
     return () => clearTimeout(timer);
   }, [studentId]);
+
+  // Fetch Student Attendance Record (Time In / Time Out)
+  const fetchStudentAttendanceStatus = async (eventId, sId) => {
+    if (!eventId || !sId) return;
+    try {
+      const res = await axios.get(`/api/attendance/student-status/${eventId}/${encodeURIComponent(sId)}`);
+      setAttendanceStatus(res.data);
+    } catch (err) {
+      setAttendanceStatus(null);
+    }
+  };
 
   // Fetch Student Checkpoint Visits & Task History
   const fetchStudentCheckpointStatus = async (eventId, sId) => {
@@ -265,6 +282,14 @@ export default function StudentHome({ onOpenPwaNotice }) {
       setStudentVisits(res.data.visits || []);
     } catch (err) {}
   };
+
+  // Sync attendance and checkpoints when active event changes
+  useEffect(() => {
+    if (activeEvent && studentInfo) {
+      fetchStudentAttendanceStatus(activeEvent.id, studentInfo.student_id);
+      fetchStudentCheckpointStatus(activeEvent.id, studentInfo.student_id);
+    }
+  }, [activeEvent?.id, studentInfo?.student_id]);
 
   // Evaluate Checkpoint Proximity when student coordinates update
   useEffect(() => {
@@ -709,10 +734,15 @@ export default function StudentHome({ onOpenPwaNotice }) {
         motionData: submitMotion,
         auth_method: authMethodToUse,
         auth_token: authToken,
+        forceAction: forcedAction !== 'auto' ? forcedAction : undefined,
         signature: credentialPass?.signature
       });
 
       setSubmissionResult(res.data);
+      if (activeEvent) {
+        fetchStudentAttendanceStatus(activeEvent.id, studentId.trim());
+        fetchStudentCheckpointStatus(activeEvent.id, studentId.trim());
+      }
       if (authMode === 'email_otp') {
         setVerifiedOtpToken(null);
         setOtpSent(false);
@@ -723,6 +753,9 @@ export default function StudentHome({ onOpenPwaNotice }) {
         setSubmissionResult(err.response.data);
       } else {
         setSubmissionError(err.message || 'Failed to submit attendance');
+      }
+      if (activeEvent) {
+        fetchStudentAttendanceStatus(activeEvent.id, studentId.trim());
       }
     } finally {
       setSubmitting(false);
@@ -1261,6 +1294,28 @@ export default function StudentHome({ onOpenPwaNotice }) {
             </span>
           </div>
 
+          {/* Session Stage Guidance Banner */}
+          {studentInfo && (
+            <div>
+              {!attendanceStatus?.hasTimedIn ? (
+                <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>You are not yet Timed In. You can explore checkpoint stations now, or submit your <strong>Time In</strong> below first.</span>
+                </div>
+              ) : !attendanceStatus?.hasTimedOut ? (
+                <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>You are <strong>Timed In</strong>! Complete station missions by moving within checkpoint zones before submitting <strong>Time Out</strong>.</span>
+                </div>
+              ) : (
+                <div className="p-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-xs text-indigo-300 flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-indigo-400 shrink-0" />
+                  <span>Attendance session is <strong>Completed</strong>! All checkpoint logs and time-out are recorded.</span>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Checkpoint Station Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
             {(activeEvent.checkpoints || []).map((cp, idx) => {
@@ -1413,6 +1468,98 @@ export default function StudentHome({ onOpenPwaNotice }) {
           </div>
         </div>
 
+        {/* Real-time Student Attendance Status Banner */}
+        {studentInfo && (
+          <div className="space-y-2">
+            {!attendanceStatus?.hasTimedIn ? (
+              <div className="p-3 rounded-xl bg-amber-950/30 border border-amber-500/30 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2.5">
+                  <Clock className="w-4 h-4 text-amber-400 shrink-0" />
+                  <div>
+                    <strong className="text-white block">Status: Not Yet Timed In</strong>
+                    <span className="text-[11px] text-slate-400">Click below to record your official TIME IN for this event.</span>
+                  </div>
+                </div>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 shrink-0">
+                  TIME-IN PENDING
+                </span>
+              </div>
+            ) : !attendanceStatus?.hasTimedOut ? (
+              <div className="p-3 rounded-xl bg-emerald-950/30 border border-emerald-500/30 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2.5">
+                  <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <div>
+                    <strong className="text-white block">Status: Currently Timed In ✅</strong>
+                    <span className="text-[11px] text-slate-300">
+                      Logged at {new Date(attendanceStatus.timeInRecord.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • Active Event Session
+                    </span>
+                  </div>
+                </div>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 shrink-0">
+                  TIMED IN
+                </span>
+              </div>
+            ) : (
+              <div className="p-3 rounded-xl bg-indigo-950/30 border border-indigo-500/30 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2.5">
+                  <ShieldCheck className="w-4 h-4 text-indigo-400 shrink-0" />
+                  <div>
+                    <strong className="text-white block">Status: Attendance Completed ✅</strong>
+                    <span className="text-[11px] text-slate-300">
+                      Timed In: {new Date(attendanceStatus.timeInRecord.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • Timed Out: {new Date(attendanceStatus.timeOutRecord.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                </div>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-300 shrink-0">
+                  COMPLETED
+                </span>
+              </div>
+            )}
+
+            {/* Attendance Action Selector */}
+            <div className="space-y-1 pt-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                Select Attendance Target Action
+              </label>
+              <div className="grid grid-cols-3 gap-1.5 p-1 rounded-xl bg-slate-900 border border-slate-800 text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => setForcedAction('auto')}
+                  className={`py-1.5 px-2 rounded-lg transition-all cursor-pointer ${
+                    forcedAction === 'auto'
+                      ? 'bg-indigo-600 text-white font-bold shadow'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  ⚡ Auto ({!attendanceStatus?.hasTimedIn ? 'Time In' : !attendanceStatus?.hasTimedOut ? 'Time Out' : 'Update'})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setForcedAction('time_in')}
+                  className={`py-1.5 px-2 rounded-lg transition-all cursor-pointer ${
+                    forcedAction === 'time_in'
+                      ? 'bg-emerald-600 text-white font-bold shadow'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  📥 Time In
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setForcedAction('time_out')}
+                  className={`py-1.5 px-2 rounded-lg transition-all cursor-pointer ${
+                    forcedAction === 'time_out'
+                      ? 'bg-purple-600 text-white font-bold shadow'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  📤 Time Out
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Anti-Spoof Test Scenario Switcher */}
         <div className="p-3.5 rounded-xl bg-purple-950/30 border border-purple-500/20 space-y-2 text-xs">
           <div className="flex items-center justify-between">
@@ -1458,11 +1605,11 @@ export default function StudentHome({ onOpenPwaNotice }) {
                   <Fingerprint className="w-5 h-5 text-white" />
                 )}
                 <span>
-                  {authMode === 'email_otp'
-                    ? 'Verify Email OTP & Record Attendance'
-                    : hasWebAuthn
-                    ? 'Scan Biometrics & Record Attendance'
-                    : 'Submit Signed Attendance (Biometrics Recommended)'}
+                  {forcedAction === 'time_in' || (forcedAction === 'auto' && !attendanceStatus?.hasTimedIn)
+                    ? (authMode === 'email_otp' ? 'Verify Email OTP & Record TIME IN' : (hasWebAuthn ? 'Scan Biometrics & Record TIME IN' : 'Submit TIME IN (Biometrics Recommended)'))
+                    : forcedAction === 'time_out' || (forcedAction === 'auto' && attendanceStatus?.hasTimedIn && !attendanceStatus?.hasTimedOut)
+                    ? (authMode === 'email_otp' ? 'Verify Email OTP & Record TIME OUT' : (hasWebAuthn ? 'Scan Biometrics & Record TIME OUT' : 'Submit TIME OUT (Biometrics Recommended)'))
+                    : (authMode === 'email_otp' ? 'Update Attendance Record (Email OTP)' : (hasWebAuthn ? 'Scan Biometrics & Update Attendance' : 'Update Attendance Record'))}
                 </span>
               </>
             )}
