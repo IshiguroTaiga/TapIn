@@ -3,6 +3,35 @@
 
 ---
 
+## 📌 Version 4.3 (Socket.io Cross-Domain Transport, False-Positive Prevention & Server-Confirmed Time Out Gating)
+
+### 🚀 What Has Been Updated & Implemented
+
+#### 1. 🔌 Centralized Socket.io Transport & Cross-Domain Resolution (`client/src/services/socket.js`, `AdminDashboard.jsx`, `AttendanceLogs.jsx`, `StudentHome.jsx`, `TaskSubmissionsReview.jsx`)
+- **Automated Base URL Resolution**: Replaced bare `io()` calls with a centralized `createSocket()` helper that dynamically resolves `VITE_API_URL` origin in production (e.g. Vercel $\to$ Render) while falling back to Vite relative proxy in local development.
+- **Dual Transport Fallback**: Configured `transports: ['websocket', 'polling']` with automated reconnection strategies to eliminate polling 404 loops.
+- **Real-Time Synchronized Lifecycle**: Live socket events (`task_submission_updated`, `task_submission_approved`, `task_submission_rejected`, `task_submissions_bulk_approved`, `attendance_updated`) instantly sync student HUDs and admin review queues without manual page reloads.
+
+#### 2. 🛡️ Critical Trust Bug Fix: Zero False-Positive Task Verifications (`StudentHome.jsx`)
+- **Strict 2xx Server-Confirmed Outcome State**: Fixed task submission handler so success status banners and EXIF/dHash diagnostics are rendered **only** when the backend responds with a genuine `200 OK` and `{ success: true }`.
+- **Explanatory Error Handling**: Non-2xx network/server errors (e.g., 404, 400, 500) immediately clear result states and display explicit diagnostic error banners (`"Submission failed — check your connection and try again"`), preventing students from believing failed submissions were approved.
+
+#### 3. 🔒 Server-Confirmed Time Out Lock Gating (`server/routes/attendance.js`, `StudentHome.jsx`)
+- **Strict Server Gating**: `/api/attendance/submit` on `action = 'time_out'` independently calculates:
+  $$\text{verifiedStations} = \text{COUNT}(\text{DISTINCT checkpoint\_id in } \texttt{student\_task\_assignments} \text{ WHERE } \texttt{status} = \text{'verified'})$$
+  and returns `HTTP 403 Forbidden` if $\text{verifiedStations} < \text{totalCheckpoints}$.
+- **Consistent Progress Metrics**: Updated `/api/attendance/student-status` to count verified task assignments instead of physical proximity visits for total completed stations.
+- **Client Reactive Lock**: Student HUD reflects lock status in real-time, disabling the Time Out button until all checkpoint stations are approved by an administrator.
+
+#### 4. 🖼️ Admin Tasks Review & Cross-Domain Photo Delivery (`TaskSubmissionsReview.jsx`)
+- **Cross-Domain Image Delivery (`getPhotoUrl`)**: Formats relative `/uploads/` paths with backend URL, ensuring submission photos display seamlessly across cross-domain deployments.
+- **Dedicated Admin Review Portal**: Admins inspect photo submissions, EXIF camera metadata, dHash collision indicators, and perform 1-click approvals or rejections with feedback reasons.
+
+#### 5. 🧪 Automated Fixes & Gating Verification Suite (`server/scripts/testReviewAndGatingFixes.js`)
+- Added automated 11-step verification suite (`npm run test:fixes`) testing submissions endpoint querying, task distribution, pending status preservation, false-positive protection, admin approval flow, and Time Out lock/unlock transitions.
+
+---
+
 ## 📌 Version 4.2 (Checkpoint Verification State Machine, Task Distribution Auto-Seeding & Time-Out Gating)
 
 ### 🚀 What Has Been Updated & Implemented

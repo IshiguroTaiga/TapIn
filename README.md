@@ -63,7 +63,8 @@ npm run seed
 npm test               # Run 15-test Ray-Casting PIP Geofence suite
 npm run test:features  # Run 13-test WebAuthn, OTP & Checkpoint suite
 npm run test:sequence  # Run 8-test Time-In -> Tasks -> Time-Out lifecycle suite
-npm run test:all       # Run all 36 automated test suites (PIP + Features + Sequence)
+npm run test:fixes     # Run 11-test Task Review & Time-Out Gating suite
+npm run test:all       # Run all 47 automated test suites (PIP + Features + Sequence + Fixes)
 
 # Run Research Evaluation Harnesses
 npm run generate-dataset  # Generate benchmark trace dataset
@@ -118,6 +119,8 @@ TapIn/
 │   └── scripts/
 │       ├── testGeofence.js        # Automated PIP test suite (15 tests)
 │       ├── testNewFeatures.js     # Automated WebAuthn, OTP & Checkpoint suite (13 tests)
+│       ├── testFullSequence.js    # Automated 8-step full sequence test
+│       ├── testReviewAndGatingFixes.js # Automated 11-step fixes & gating suite
 │       ├── generateSampleDataset.js # Benchmark trace generator
 │       └── evalSpoofDetector.js   # Research evaluation harness
 └── client/
@@ -125,6 +128,8 @@ TapIn/
     ├── vite.config.js             # Vite configuration
     └── src/
         ├── App.jsx                # Router & navigation layout
+        ├── services/
+        │   └── socket.js          # Centralized Socket.io client with URL resolution
         ├── components/
         │   ├── LiveGeofenceMap.jsx     # Leaflet live telemetry map
         │   ├── GeofenceMapPicker.jsx   # Interactive polygon perimeter editor
@@ -133,6 +138,7 @@ TapIn/
         └── pages/
             ├── StudentHome.jsx         # Student telemetry, WebAuthn & check-in HUD
             ├── AdminDashboard.jsx      # Admin live attendance monitor
+            ├── TaskSubmissionsReview.jsx # Admin task verification & approval queue
             ├── EventManagement.jsx     # Event polygon & checkpoint manager
             ├── AttendanceLogs.jsx      # Historical audit logs & multi-format export
             ├── SpoofResearchLab.jsx    # Research lab & threshold configurator

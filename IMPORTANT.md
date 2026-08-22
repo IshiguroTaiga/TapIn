@@ -178,3 +178,7 @@ When a student enters a checkpoint catchment, the server assigns a task from tha
 
 ### Q7: How does the Admin Review and Approval workflow work for checkpoint missions?
 > **Answer**: "When a student submits a photo or text task, it enters the administrator approval queue with status `submitted` (Pending Approval). Admins view all submissions in real-time in the `Tasks Review` dashboard with EXIF geolocation analysis and dHash duplicate detection. Admins can 1-click approve or reject with custom feedback. Upon approval, the station marks as `Verified & Completed`, unlocking Time Out in real-time via Socket.io."
+
+### Q8: How does TapIn prevent false positive task completions when network requests fail or endpoints are unreachable?
+> **Answer**: "The client enforces a strict 2xx server-confirmed outcome model. UI success banners and verified station statuses are only set when the backend responds with a genuine HTTP 200 and `{ success: true }`. If a network interruption, 404, or server error occurs, the client clears any previous result state and renders an explicit diagnostic failure banner (`Submission failed — check your connection and try again`). Time Out is independently gated on the server side in `/api/attendance/submit`, which verifies distinct `status = 'verified'` records in the database and returns `HTTP 403 Forbidden` if any required stations remain incomplete, ensuring client-side tampering cannot bypass physical checkpoint verification."
+
