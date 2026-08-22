@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import io from 'socket.io-client';
+import { createSocket } from '../services/socket';
 import {
   CheckSquare,
   CheckCircle,
@@ -14,6 +14,13 @@ import {
   AlertTriangle
 } from 'lucide-react';
 
+const getPhotoUrl = (url) => {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  const baseUrl = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/api\/?$/, '').replace(/\/+$/, '') : '';
+  return `${baseUrl}${url}`;
+};
+
 export default function TaskSubmissionsReview() {
   const [submissions, setSubmissions] = useState([]);
   const [stats, setStats] = useState({ total: 0, pending: 0, approved: 0, rejected: 0 });
@@ -22,6 +29,7 @@ export default function TaskSubmissionsReview() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(null);
   const [actionLoading, setActionLoading] = useState(null);
 
   // Modals
@@ -40,6 +48,7 @@ export default function TaskSubmissionsReview() {
 
   const fetchSubmissions = async () => {
     setLoading(true);
+    setFetchError(null);
     try {
       const params = {};
       if (selectedEventId !== 'all') params.event_id = selectedEventId;
@@ -51,6 +60,7 @@ export default function TaskSubmissionsReview() {
       setStats(res.data.stats || { total: 0, pending: 0, approved: 0, rejected: 0 });
     } catch (err) {
       console.error('Failed to fetch task submissions:', err);
+      setFetchError(err.response?.data?.error || err.message || 'Failed to load task submissions from server');
     } finally {
       setLoading(false);
     }
@@ -60,7 +70,7 @@ export default function TaskSubmissionsReview() {
     fetchEvents();
     fetchSubmissions();
 
-    const socket = io();
+    const socket = createSocket();
     socket.on('task_submission_updated', () => fetchSubmissions());
     socket.on('task_submission_approved', () => fetchSubmissions());
     socket.on('task_submission_rejected', () => fetchSubmissions());
@@ -245,6 +255,25 @@ export default function TaskSubmissionsReview() {
         </div>
       </div>
 
+      {/* Fetch Error Banner */}
+      {fetchError && (
+        <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
+            <div>
+              <strong className="block text-white font-semibold">Failed to load task submissions</strong>
+              <span>{fetchError}</span>
+            </div>
+          </div>
+          <button
+            onClick={fetchSubmissions}
+            className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shrink-0 cursor-pointer"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Submissions Grid */}
       {loading ? (
         <div className="glass-card rounded-2xl p-12 text-center text-slate-400 text-sm animate-pulse space-y-2">
@@ -323,13 +352,13 @@ export default function TaskSubmissionsReview() {
                     <div className="space-y-2">
                       <div className="relative rounded-xl overflow-hidden border border-slate-700 bg-slate-950 aspect-video group">
                         <img
-                          src={sub.photo_url}
+                          src={getPhotoUrl(sub.photo_url)}
                           alt="Student Task Submission"
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                         />
                         <button
                           type="button"
-                          onClick={() => setPreviewPhotoUrl(sub.photo_url)}
+                          onClick={() => setPreviewPhotoUrl(getPhotoUrl(sub.photo_url))}
                           className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 text-xs text-white font-bold cursor-pointer"
                         >
                           <Eye className="w-4 h-4" />

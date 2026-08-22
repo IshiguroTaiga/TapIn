@@ -331,9 +331,13 @@ router.get('/student-status/:eventId/:studentId', (req, res) => {
     nextAction = 'completed';
   }
 
-  // Checkpoint progress
+  // Checkpoint progress: count server-verified completed checkpoint tasks
   const totalCheckpoints = db.prepare(`SELECT COUNT(*) as count FROM event_checkpoints WHERE event_id = ?`).get(eId)?.count || 0;
-  const visitedCheckpoints = db.prepare(`SELECT COUNT(DISTINCT checkpoint_id) as count FROM student_checkpoint_visits WHERE event_id = ? AND student_id = ?`).get(eId, sId)?.count || 0;
+  const verifiedCheckpoints = db.prepare(`
+    SELECT COUNT(DISTINCT checkpoint_id) as count 
+    FROM student_task_assignments 
+    WHERE event_id = ? AND student_id = ? AND status = 'verified'
+  `).get(eId, sId)?.count || 0;
 
   res.json({
     eventId: eId,
@@ -344,9 +348,9 @@ router.get('/student-status/:eventId/:studentId', (req, res) => {
     timeInRecord: timeInLog || null,
     timeOutRecord: timeOutLog || null,
     checkpointProgress: {
-      completedStations: visitedCheckpoints,
+      completedStations: verifiedCheckpoints,
       totalStations: totalCheckpoints,
-      allCompleted: totalCheckpoints > 0 ? visitedCheckpoints >= totalCheckpoints : true
+      allCompleted: totalCheckpoints > 0 ? verifiedCheckpoints >= totalCheckpoints : true
     },
     logs
   });

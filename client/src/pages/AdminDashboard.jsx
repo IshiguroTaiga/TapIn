@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import io from 'socket.io-client';
+import { createSocket } from '../services/socket';
 import LiveGeofenceMap from '../components/LiveGeofenceMap';
 import {
   Users,
@@ -46,7 +46,7 @@ export default function AdminDashboard({ onNavigate }) {
     fetchAllEvents();
 
     // Socket.io Real-time Connection
-    const socket = io();
+    const socket = createSocket();
 
     socket.on('connect', () => {
       console.log('[Socket.io] Admin connected to live telemetry stream');

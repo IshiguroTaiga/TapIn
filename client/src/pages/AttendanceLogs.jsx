@@ -18,7 +18,7 @@ import {
   ShieldCheck
 } from 'lucide-react';
 
-import io from 'socket.io-client';
+import { createSocket } from '../services/socket';
 
 export default function AttendanceLogs() {
   const [logs, setLogs] = useState([]);
@@ -37,7 +37,7 @@ export default function AttendanceLogs() {
     fetchEvents();
     fetchLogs();
 
-    const socket = io();
+    const socket = createSocket();
     socket.on('attendance_updated', () => {
       fetchLogs();
     });

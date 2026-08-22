@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import LiveGeofenceMap from '../components/LiveGeofenceMap';
 import { QRCodeSVG } from 'qrcode.react';
-import io from 'socket.io-client';
+import { createSocket } from '../services/socket';
 import {
   MapPin,
   Clock,
@@ -302,7 +302,7 @@ export default function StudentHome({ onOpenPwaNotice }) {
       fetchStudentCheckpointStatus(activeEvent.id, studentInfo.student_id);
     }
 
-    const socket = io();
+    const socket = createSocket();
     socket.on('task_submission_approved', (data) => {
       if (activeEvent && studentInfo && data.studentId === studentInfo.student_id) {
         fetchStudentCheckpointStatus(activeEvent.id, studentInfo.student_id);
@@ -814,17 +814,21 @@ export default function StudentHome({ onOpenPwaNotice }) {
       const res = await axios.post(`/api/checkpoints/tasks/${assignmentId}/submit`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
-      setTaskSubmissionResult(res.data);
+      if (res.data && res.data.success) {
+        setTaskSubmissionResult(res.data);
+        setTaskSubmitError(null);
+      } else {
+        setTaskSubmissionResult(null);
+        setTaskSubmitError(res.data?.error || 'Submission failed — check your connection and try again.');
+      }
       if (activeEvent) {
         fetchStudentCheckpointStatus(activeEvent.id, studentId.trim());
         fetchStudentAttendanceStatus(activeEvent.id, studentId.trim());
       }
     } catch (err) {
-      if (err.response?.data) {
-        setTaskSubmissionResult(err.response.data);
-      } else {
-        setTaskSubmitError(err.message || 'Failed to submit task verification.');
-      }
+      setTaskSubmissionResult(null);
+      const serverErrMsg = err.response?.data?.error || err.response?.data?.message;
+      setTaskSubmitError(serverErrMsg || 'Submission failed — check your connection and try again.');
       if (activeEvent) {
         fetchStudentCheckpointStatus(activeEvent.id, studentId.trim());
       }
@@ -1334,26 +1338,18 @@ export default function StudentHome({ onOpenPwaNotice }) {
                   )}
                 </button>
 
-                {/* Task Outcome Result */}
-                {taskSubmissionResult && (
-                  <div className={`p-3.5 rounded-xl border text-xs space-y-1.5 animate-in fade-in ${
-                    taskSubmissionResult.success
-                      ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
-                      : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
-                  }`}>
+                {/* Task Outcome Result (Shown only on verified server response) */}
+                {taskSubmissionResult && taskSubmissionResult.success && (
+                  <div className="p-3.5 rounded-xl border text-xs space-y-1.5 animate-in fade-in bg-amber-500/10 border-amber-500/30 text-amber-300">
                     <div className="font-bold flex items-center gap-1.5">
-                      {taskSubmissionResult.success ? (
-                        <Clock className="w-4 h-4 text-amber-400 animate-pulse" />
-                      ) : (
-                        <ShieldAlert className="w-4 h-4 text-rose-400" />
-                      )}
+                      <Clock className="w-4 h-4 text-amber-400 animate-pulse shrink-0" />
                       <span>{taskSubmissionResult.message}</span>
                     </div>
 
                     {taskSubmissionResult.photoAnalysis && (
                       <div className="pt-1.5 border-t border-slate-800 text-[11px] grid grid-cols-2 gap-1.5 text-slate-300">
-                        <div>EXIF GPS: <strong>{taskSubmissionResult.photoAnalysis.metadata.gpsExtracted ? 'Present' : 'Not found'}</strong></div>
-                        <div>Hash Match: <strong className={taskSubmissionResult.photoAnalysis.duplicateDetection.isDuplicate ? 'text-rose-400 font-bold' : 'text-emerald-400'}>{taskSubmissionResult.photoAnalysis.duplicateDetection.similarityPercentage} Duplicate</strong></div>
+                        <div>EXIF GPS: <strong>{taskSubmissionResult.photoAnalysis.metadata?.gpsExtracted ? 'Present' : 'Not found'}</strong></div>
+                        <div>Hash Match: <strong className={taskSubmissionResult.photoAnalysis.duplicateDetection?.isDuplicate ? 'text-rose-400 font-bold' : 'text-emerald-400'}>{taskSubmissionResult.photoAnalysis.duplicateDetection?.similarityPercentage || '0%'} Duplicate</strong></div>
                       </div>
                     )}
                   </div>
@@ -1570,7 +1566,7 @@ export default function StudentHome({ onOpenPwaNotice }) {
               ) : (
                 <ShieldAlert className="w-5 h-5 text-rose-400 shrink-0" />
               )}
-              <span>{submissionResult.message}</span>
+              <span>{submissionResult.message || submissionResult.error}</span>
             </div>
 
             {submissionResult.authVerification && (
