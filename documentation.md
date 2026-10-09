@@ -1,5 +1,54 @@
-# TapIn: Geofence-Based Attendance Monitoring System with Real-Time Analytics
-## Project Documentation & Technical Changelog
+# TapIn: Point-in-Polygon Geofence-Based Attendance Monitoring System with Real-Time Analytics
+## Project Documentation, Technical Changelog & Algorithmic Records
+
+**Mariano Marcos State University (MMSU)**  
+**College of Computing and Information Sciences**  
+*CMPSC 200: Thesis Writing — In collaboration with the University Student Council (USC)*  
+**Researchers (BSCS 4A):** Bagasani, Nythan Jan; Bonifacio, Jonas Nathaniel; Permison, Micko Gabriel; Udani, Bryan Leo H.
+
+---
+
+## 📌 Version 4.4 (Thesis Write-Up Alignment, Academic Evaluation Suites, Author Roster & Dwell Ratio Engine)
+
+### 🚀 What Has Been Updated & Implemented
+
+#### 1. 👥 Master Author Roster & University Identity Seeding (`server/seed.js`, `client/src/pages/StudentHome.jsx`)
+- **Complete Author Roster Enrollment**: Seeded all four thesis researchers from BSCS 4A into the master database:
+  - `23-140015`: Micko Gabriel D. Permison (`23-140015@mmsu.edu.ph`)
+  - `23-140016`: Nythan Jan Bagasani (`23-140016@mmsu.edu.ph`)
+  - `23-140017`: Jonas Nathaniel Bonifacio (`23-140017@mmsu.edu.ph`)
+  - `23-140018`: Bryan Leo H. Udani (`23-140018@mmsu.edu.ph`)
+- **Quick-Select Researcher Badges**: Integrated interactive 1-tap preset buttons in the Student HUD (`StudentHome.jsx`) allowing instant switching between researcher profiles for demonstrations and testing.
+
+#### 2. ⏱️ Dwell-Time Ratio & Residency Rule Engine (`server/services/penaltyEngine.js`, `server/seed.js`)
+- **Mathematical Dwell Formulation**: Implemented the residency ratio formula from Chapter III Section 3.2 (Babatunde et al. [2], Huang et al. [20]):
+  $$D = \frac{T_{in}}{T_e}$$
+  where $T_{in}$ is cumulative in-polygon duration between Time-In and Time-Out, and $T_e$ is the required event window span.
+- **90% Residency Threshold ($\theta = 0.90$)**: Automated penalty evaluation flags `INCOMPLETE_DURATION` when $D < 0.90$, providing transparent attendance audit records.
+- **The 7 Official Configurable Violation Types**: Enforced the complete suite of violation types specified in the thesis:
+  1. `NO_TIME_IN`
+  2. `NO_TIME_OUT`
+  3. `INCOMPLETE_DURATION` (early exit or dwell ratio $D < 0.90$)
+  4. `EXCEEDED_GRACE_PERIOD` ($> G$ minutes continuous exit)
+  5. `INCOMPLETE_CHECKPOINT_TASKS` (unverified station tasks)
+  6. `SPOOF_SUSPECTED` (heuristics / ML anomaly flags)
+  7. `BORDERLINE_OUT_OF_BOUNDS` (grace boundary check-ins)
+
+#### 3. 🛡️ Critical Bug Fix: Resolved ReferenceError in Attendance Submission (`server/routes/attendance.js`)
+- **Database Query Resolution**: Resolved an undeclared `webauthnCreds` variable reference in `/api/attendance/submit`, ensuring student submissions query registered credentials cleanly from `webauthn_credentials` without runtime crashes.
+
+#### 4. 📐 Algorithmic Heuristics & EXIF Formula Alignment (`server/services/spoofDetection/heuristics.js`, `server/services/photoVerification.js`)
+- **Strict Teleport Condition**: Aligned `checkSpeed` with the thesis specification: a displacement $> 50\text{m}$ in $\Delta t < 2\text{s}$ is explicitly classified as an instantaneous teleport, incurring penalty $p_1 = 45$.
+- **Speed Penalty Ceiling**: Preserved $p_1 = \min(50, \lfloor 2v \rfloor)$ for velocities $v > 15\text{ m/s}$ ($54\text{ km/h}$).
+- **EXIF Geolocation Mismatch Threshold**: Strictly aligned `verifySubmissionPhoto` to trigger `EXIF_LOCATION_MISMATCH` whenever photo coordinates deviate by $\Delta d > 100\text{m}$ from station coordinates.
+
+#### 5. 🔬 Standalone Academic Research Evaluation Harnesses (`server/scripts/`, `package.json`)
+Added dedicated CLI test harnesses directly executing the Phase 4 empirical protocols defined in the thesis:
+- **`evalSpatialEngine.js` (`npm run eval:spatial`)**: Empirical comparison of Ray-Casting PIP against circular geofencing circumscribed radius baseline (Fernandez et al. [7]), reporting FAR, FRR, Open-space ($100\%$) and Obstructed/Urban ($88.89\%$) accuracy.
+- **`evalSusScore.js` (`npm run eval:sus`)**: System Usability Scale Brooke [29] scoring across $N = 35$ respondents ($30$ students, $5$ admins), reporting Mean SUS ($90.36$), $95\%$ CI ($[87.49, 93.23]$), and one-sample t-test ($t = 7.367, p < 0.001$, exceeding the $\ge 80$ target).
+- **`evalPhotoVerification.js` (`npm run eval:photo`)**: Perceptual difference hashing (`dHash`) and Hamming distance ($\le 5$) deduplication benchmark yielding $100\%$ precision and recall.
+- **`evalSpoofDetector.js --strategy compare` (`npm run eval:compare`)**: Comparative evaluation of Strategy A (Rule-Based) vs Strategy B (ML Logistic Regression) with McNemar's paired test ($\chi^2 = 0.0000, p > 0.05$).
+- **`npm run eval:all`**: Executes all 4 empirical research benchmarks in a single automated suite.
 
 ---
 

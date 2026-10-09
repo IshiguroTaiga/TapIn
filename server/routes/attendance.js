@@ -229,6 +229,9 @@ router.post('/submit', (req, res) => {
     resolvedAuthMethod
   );
 
+  // Query WebAuthn credentials for student
+  const webauthnCreds = db.prepare(`SELECT id FROM webauthn_credentials WHERE student_id = ?`).all(student.student_id);
+
   const responsePayload = {
     success: !rejected,
     action,

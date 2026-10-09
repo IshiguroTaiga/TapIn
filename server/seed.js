@@ -25,24 +25,29 @@ function seed() {
   const violationTypes = [
     ['NO_TIME_IN', 'No Time-In Recorded', 'Student failed to log Time-In during any designated time-in window', 'Marked Absent'],
     ['NO_TIME_OUT', 'No Time-Out Recorded', 'Student logged Time-In but failed to log Time-Out when event ended', 'Partial Credit Deduction'],
-    ['INCOMPLETE_DURATION', 'Did Not Complete Full Duration', 'Student left the event perimeter before designated completion time', 'Violation Warning'],
+    ['INCOMPLETE_DURATION', 'Did Not Complete Full Duration', 'Student left the event perimeter before designated completion time or fell below 90% dwell residency', 'Violation Warning'],
     ['EXCEEDED_GRACE_PERIOD', 'Exceeded Allowed Geofence Grace Period', 'Student spent more than allowed grace period duration outside event polygon geofence', 'Grace Violation'],
+    ['INCOMPLETE_CHECKPOINT_TASKS', 'Incomplete Checkpoint Tasks', 'Student failed to complete and verify all assigned checkpoint tasks before event close', 'Marked Incomplete'],
     ['SPOOF_SUSPECTED', 'GPS Spoofing / Location Anomaly Detected', 'Location report failed real-time spoof detection algorithms', 'Security Audit Required'],
     ['BORDERLINE_OUT_OF_BOUNDS', 'Borderline Location Attendance', 'Timed in or out within grace window slightly beyond polygon boundary', 'Flagged Log']
   ];
 
   violationTypes.forEach(vt => insertViolationType.run(...vt));
 
-  // 3. Seed Master Students List (Clean production state: Only Micko Gabriel D. Permison)
-  db.prepare(`DELETE FROM students WHERE student_id != '23-140015'`).run();
+  // 3. Seed Master Students List (BSCS 4A Thesis Authors - MMSU CCIS)
+  const allowedIds = ['23-140015', '23-140016', '23-140017', '23-140018'];
+  db.prepare(`DELETE FROM students WHERE student_id NOT IN ('23-140015', '23-140016', '23-140017', '23-140018')`).run();
 
   const insertStudent = db.prepare(`
-    INSERT OR REPLACE INTO students (student_id, name, year, course, college, section)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT OR REPLACE INTO students (student_id, name, year, course, college, section, email)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
 
   const sampleStudents = [
-    ['23-140015', 'Micko Gabriel D. Permison', 4, 'BS Computer Science', 'College of Computing and Information Sciences', 'A']
+    ['23-140015', 'Micko Gabriel D. Permison', 4, 'BS Computer Science', 'College of Computing and Information Sciences', 'A', '23-140015@mmsu.edu.ph'],
+    ['23-140016', 'Nythan Jan Bagasani', 4, 'BS Computer Science', 'College of Computing and Information Sciences', 'A', '23-140016@mmsu.edu.ph'],
+    ['23-140017', 'Jonas Nathaniel Bonifacio', 4, 'BS Computer Science', 'College of Computing and Information Sciences', 'A', '23-140017@mmsu.edu.ph'],
+    ['23-140018', 'Bryan Leo H. Udani', 4, 'BS Computer Science', 'College of Computing and Information Sciences', 'A', '23-140018@mmsu.edu.ph']
   ];
 
   sampleStudents.forEach(st => insertStudent.run(...st));

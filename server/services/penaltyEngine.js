@@ -102,15 +102,50 @@ function evaluateEventPenalties(eventId) {
       });
     }
 
-    // 5. Incomplete Duration (timed out early before minimum event duration window)
-    if (timeInLogs.length > 0 && timeOutLogs.length > 0 && timeOutWindow) {
+    // 5. Incomplete Duration & Dwell Ratio Analysis (D = Tin / Te >= 0.90 residency threshold per Babatunde et al. & Huang et al.)
+    let dwellRatio = 1.0;
+    if (timeInLogs.length > 0 && timeOutLogs.length > 0) {
+      const timeInTime = new Date(timeInLogs[0].timestamp).getTime();
       const timeOutTime = new Date(timeOutLogs[timeOutLogs.length - 1].timestamp).getTime();
-      const expectedMinTimeOut = new Date(timeOutWindow.start_time).getTime();
+      const totalStudentSpanMs = Math.max(0, timeOutTime - timeInTime);
 
-      if (timeOutTime < expectedMinTimeOut) {
+      // Event duration window Te
+      let eventDurationMs = totalStudentSpanMs;
+      if (timeInWindow && timeOutWindow) {
+        const winStart = new Date(timeInWindow.start_time).getTime();
+        const winEnd = new Date(timeOutWindow.end_time || timeOutWindow.start_time).getTime();
+        if (winEnd > winStart) {
+          eventDurationMs = winEnd - winStart;
+        }
+      }
+
+      // Calculate Tin: time spent strictly inside polygon
+      const nonGraceLogs = logs.filter(l => l.status !== 'grace_exceeded' && l.status !== 'rejected');
+      const outsideLogs = logs.filter(l => l.in_range === 0);
+      const outsideRatio = nonGraceLogs.length > 0 ? (outsideLogs.length / nonGraceLogs.length) : 0;
+      const calculatedInsideMs = totalStudentSpanMs * (1 - outsideRatio);
+
+      if (eventDurationMs > 0 && totalStudentSpanMs > 0) {
+        dwellRatio = Math.min(1.0, calculatedInsideMs / eventDurationMs);
+      }
+
+      // Check early exit against timeOutWindow start time
+      if (timeOutWindow) {
+        const expectedMinTimeOut = new Date(timeOutWindow.start_time).getTime();
+        if (timeOutTime < expectedMinTimeOut) {
+          violationsDetected.push({
+            code: 'INCOMPLETE_DURATION',
+            description: violationConfigMap['INCOMPLETE_DURATION'] || 'Did Not Complete Full Event Duration (Early Time-Out)'
+          });
+        }
+      }
+
+      // Residency threshold check (theta = 0.90 default from Babatunde et al. [2])
+      const dwellThreshold = 0.90;
+      if (dwellRatio < dwellThreshold && !violationsDetected.some(v => v.code === 'INCOMPLETE_DURATION')) {
         violationsDetected.push({
           code: 'INCOMPLETE_DURATION',
-          description: violationConfigMap['INCOMPLETE_DURATION'] || 'Did Not Complete Full Event Duration'
+          description: violationConfigMap['INCOMPLETE_DURATION'] || `Insufficient Dwell Residency: ${(dwellRatio * 100).toFixed(1)}% inside venue (< ${(dwellThreshold * 100)}% required)`
         });
       }
     }
@@ -132,6 +167,15 @@ function evaluateEventPenalties(eventId) {
       }
     }
 
+    // 7. Borderline Out of Bounds Check
+    const borderlineLogs = logs.filter(l => l.status === 'borderline');
+    if (borderlineLogs.length > 0) {
+      violationsDetected.push({
+        code: 'BORDERLINE_OUT_OF_BOUNDS',
+        description: violationConfigMap['BORDERLINE_OUT_OF_BOUNDS'] || 'Borderline Location Attendance (Recorded within grace window slightly beyond polygon boundary)'
+      });
+    }
+
     // Record violations in DB
     violationsDetected.forEach(v => {
       insertViolation.run(eventId, student.student_id, v.code, v.description);
@@ -146,6 +190,8 @@ function evaluateEventPenalties(eventId) {
       course: student.course,
       college: student.college,
       status: status,
+      dwell_ratio: Math.round(dwellRatio * 100) / 100,
+      dwell_percentage: Math.round(dwellRatio * 100),
       violations: violationsDetected
     });
   });

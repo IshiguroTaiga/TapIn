@@ -1090,6 +1090,30 @@ export default function StudentHome({ onOpenPwaNotice }) {
             }`}
           />
 
+          {/* Quick Thesis Researcher Selection */}
+          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+            <span className="text-[10px] text-slate-500 font-medium">Researchers:</span>
+            {[
+              { id: '23-140015', name: 'Permison' },
+              { id: '23-140016', name: 'Bagasani' },
+              { id: '23-140017', name: 'Bonifacio' },
+              { id: '23-140018', name: 'Udani' }
+            ].map(author => (
+              <button
+                key={author.id}
+                type="button"
+                onClick={() => setStudentId(author.id)}
+                className={`px-2 py-0.5 rounded-md text-[10px] font-mono transition-colors cursor-pointer ${
+                  studentId === author.id
+                    ? 'bg-indigo-600 text-white font-bold shadow-sm shadow-indigo-500/30'
+                    : 'bg-slate-800/80 text-slate-400 hover:text-white hover:bg-slate-700'
+                }`}
+              >
+                {author.name}
+              </button>
+            ))}
+          </div>
+
           {/* Student Info Preview */}
           {studentInfo && (
             <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-3 text-xs text-slate-300">

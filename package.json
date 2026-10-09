@@ -15,6 +15,11 @@
     "test:all": "node server/scripts/testGeofence.js && node server/scripts/testNewFeatures.js && node server/scripts/testFullSequence.js && node server/scripts/testReviewAndGatingFixes.js",
     "eval:rule": "node server/scripts/evalSpoofDetector.js --strategy rule-based",
     "eval:ml": "node server/scripts/evalSpoofDetector.js --strategy ml-classifier",
+    "eval:compare": "node server/scripts/evalSpoofDetector.js --strategy compare",
+    "eval:spatial": "node server/scripts/evalSpatialEngine.js",
+    "eval:sus": "node server/scripts/evalSusScore.js",
+    "eval:photo": "node server/scripts/evalPhotoVerification.js",
+    "eval:all": "node server/scripts/evalSpoofDetector.js --strategy compare && node server/scripts/evalSpatialEngine.js && node server/scripts/evalSusScore.js && node server/scripts/evalPhotoVerification.js",
     "generate-dataset": "node server/scripts/generateSampleDataset.js"
   },
   "keywords": [

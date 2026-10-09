@@ -280,7 +280,8 @@ function verifySubmissionPhoto(fileBuffer, checkpoint, eventId, currentStudentId
     const dist = calculateDistance(exif.gps.lat, exif.gps.lng, checkpoint.lat, checkpoint.lng);
     metadataAnalysis.distanceToCheckpointMeters = Math.round(dist * 10) / 10;
 
-    if (dist > (checkpoint.radius_m * 4 || 100)) {
+    // Cross-check GPS Geolocation against checkpoint coordinates (> 100m flags mismatch per thesis formulation)
+    if (dist > 100) {
       metadataAnalysis.flags.push('EXIF_LOCATION_MISMATCH');
       metadataAnalysis.score -= 40;
     }

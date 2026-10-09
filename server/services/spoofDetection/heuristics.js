@@ -39,7 +39,18 @@ function checkSpeed(currentTrace, previousTrace) {
 
   const speedMetersPerSecond = distanceMeters / timeDeltaSeconds;
 
-  // Speed threshold: 15 m/s = 54 km/h
+  // Teleport condition from thesis model: displacement > 50m in under 2s
+  if (timeDeltaSeconds < 2 && distanceMeters > 50) {
+    return {
+      flagged: true,
+      speed: Math.round(speedMetersPerSecond * 100) / 100,
+      penalty: 45,
+      flag: 'IMPLAUSIBLE_SPEED',
+      reason: `Instantaneous teleport detected: displacement of ${Math.round(distanceMeters)}m occurred in ${timeDeltaSeconds}s (< 2s)`
+    };
+  }
+
+  // Speed threshold: v > 15 m/s (54 km/h), penalty p1 = min(50, floor(2v))
   if (speedMetersPerSecond > 15) {
     const penalty = Math.min(50, Math.floor(speedMetersPerSecond * 2));
     return {
@@ -47,7 +58,7 @@ function checkSpeed(currentTrace, previousTrace) {
       speed: Math.round(speedMetersPerSecond * 100) / 100,
       penalty: penalty,
       flag: 'IMPLAUSIBLE_SPEED',
-      reason: `Calculated speed of ${Math.round(speedMetersPerSecond * 3.6)} km/h exceeds realistic campus speed threshold`
+      reason: `Calculated speed of ${Math.round(speedMetersPerSecond * 3.6)} km/h exceeds realistic campus speed threshold (15 m/s)`
     };
   }
 
